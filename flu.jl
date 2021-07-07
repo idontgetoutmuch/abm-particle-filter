@@ -49,13 +49,13 @@ end
 function transmit_and_recover!(model)
     ##initally = 1
     total_infected(m) = count(a.status == :I for a in allagents(m))
-    total_inf = Observable(total_infected(model))
+    total_inf = total_infected(model)
 
     total_recovered(m) = count(a.status == :R for a in allagents(m))
-    total_rec = Observable(total_recovered(model))
+    total_rec = total_recovered(model)
 
     total_sus(m) = count(a.status == :S for a in allagents(m))
-    total_suspec = Observable(total_sus(model))
+    total_suspec = total_sus(model)
 
     beta = 2
     index = 0
@@ -79,7 +79,7 @@ counter = 0
 ##recover portion
     new_recover = rand(Poisson(total_inf*Y))
 
-    cur_infected = Observable(total_infected(model))
+    cur_infected = total_infected(model)
 
     valid_recover = min(new_recover,cur_infected)
 
