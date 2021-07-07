@@ -44,17 +44,17 @@ function model_step!(model)
     transmit_and_recover!(model)
 end
 
+total_infected(m) = count(a.status == :I for a in allagents(m))
+total_recovered(m) = count(a.status == :R for a in allagents(m))
+total_sus(m) = count(a.status == :S for a in allagents(m))
 
 ##transmit function
 function transmit_and_recover!(model)
     ##initally = 1
-    total_infected(m) = count(a.status == :I for a in allagents(m))
     total_inf = total_infected(model)
 
-    total_recovered(m) = count(a.status == :R for a in allagents(m))
     total_rec = total_recovered(model)
 
-    total_sus(m) = count(a.status == :S for a in allagents(m))
     total_suspec = total_sus(model)
 
     beta = 2
@@ -94,5 +94,8 @@ counter = 0
 
 end
 
+adata = [:status]
 
-agent_df, model_df = run!(model,dummystep,model_step!,2)
+mdata = [total_infected, total_recovered, total_sus]
+
+_, model_df = run!(model,dummystep,model_step!,10; adata, mdata)
