@@ -3,6 +3,11 @@ using Distributions: Poisson, DiscreteNonParametric
 using DrWatson: @dict
 using Plots
 using Random
+using InteractiveDynamics
+using CairoMakie
+
+
+
 
 #how many students
 #num_students = 763
@@ -13,10 +18,12 @@ mutable struct Student <: AbstractAgent
     status::Symbol  # 1: S, 2: I, 3:R
 end
 
-function model_initialize(; num_students = 763, seed = 125)
+function model_initialize(; num_students = 763, beta = 2, gamma = 0.5, seed = 125)
     rng = Random.MersenneTwister(seed)
-    #student agents with a random number generator
-    model = ABM(Student)
+    # create properties for gamma and beta which can then be changed later
+    properties = Dict(:beta => beta, :gamma => gamma)
+    #student agents with a random number generator (not working)
+    model = ABM(Student; properties)
 
      #add agents
     for i in 1:num_students
@@ -30,40 +37,36 @@ function model_initialize(; num_students = 763, seed = 125)
     return model
 end
 
-#create the model
-model = model_initialize()
 
 
-##the agent step function
-#function agent_step!(agent,model)
-    #transmit_and_recover!(agent,model)
-#end
-
-
+##the model step function
 function model_step!(model)
     transmit_and_recover!(model)
 end
 
+##functions to calculate the infected, recovered and Susceptible population
 total_infected(m) = count(a.status == :I for a in allagents(m))
 total_recovered(m) = count(a.status == :R for a in allagents(m))
 total_sus(m) = count(a.status == :S for a in allagents(m))
 
-##transmit function
+##transmit and recover function for the model step
 function transmit_and_recover!(model)
-    ##initally = 1
+    seed = 125
+    rng = Random.MersenneTwister(seed)
+
+    ##caculate current values
     total_inf = total_infected(model)
-
     total_rec = total_recovered(model)
-
     total_suspec = total_sus(model)
 
-    beta = 2
+    ##read beta value from model property
+    beta_param = model.beta
     index = 0
 
     ##returns int value of number infected
-    new_infected = rand(Poisson(total_suspec * total_inf * beta / 763))
+    new_infected = rand(rng,Poisson(total_suspec * total_inf * beta_param / 763))
 
-
+    ##infect students based on how above formula
     for a in allagents(model)
         if (index < new_infected)
             if a.status == :S
@@ -73,11 +76,14 @@ function transmit_and_recover!(model)
         end
     end
 
-Y = 0.5
-counter = 0
+
 
 ##recover portion
-    new_recover = rand(Poisson(total_inf*Y))
+
+    Y = model.gamma
+    counter = 0
+
+    new_recover = rand(rng, Poisson(total_inf*Y))
 
     cur_infected = total_infected(model)
 
@@ -94,8 +100,46 @@ counter = 0
 
 end
 
+## data collection and run model
+
+#create the model
+model = model_initialize()
+
 adata = [:status]
 
 mdata = [total_infected, total_recovered, total_sus]
 
 _, model_df = run!(model,dummystep,model_step!,10; adata, mdata)
+
+
+#  parameters = Dict(:beta => collect(2:3), :gamma => [0.5,0.6],)
+# #
+#  _, model_df = paramscan(parameters, model_initialize; adata, mdata, model_step!, n = 10)
+
+##plotting function
+
+
+
+# function plot_population_timeseries_altering(model_df, min,max)
+#     figure = Figure(resolution = (600, 400))
+#     ax = figure[1, 1] = Axis(figure; xlabel = "Step", ylabel = "Number infected")
+#
+#     infectedl = lines!(ax, model_df.step, model_df.total_infected, color = :blue)
+#     recoveredl = lines!(ax, model_df.step, model_df.total_recovered, color = :orange)
+#     susceptiblel = lines!(ax, model_df.step, model_df.total_sus, color = :green)
+#
+#     figure[1, 2] = Legend(figure, [infectedl, recoveredl, susceptiblel], ["Infected", "Recovered", "Susceptible"])
+#     figure
+# end
+
+function plot_population_timeseries(model_df)
+    figure = Figure(resolution = (600, 400))
+    ax = figure[1, 1] = Axis(figure; xlabel = "Step", ylabel = "Number infected")
+    infectedl = lines!(ax, model_df.step, model_df.total_infected, color = :blue)
+    recoveredl = lines!(ax, model_df.step, model_df.total_recovered, color = :orange)
+    susceptiblel = lines!(ax, model_df.step, model_df.total_sus, color = :green)
+
+    figure[1, 2] = Legend(figure, [infectedl, recoveredl, susceptiblel], ["Infected", "Recovered", "Susceptible"])
+    figure
+end
+plot_population_timeseries(model_df)
