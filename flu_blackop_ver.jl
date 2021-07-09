@@ -5,6 +5,8 @@ using Plots
 using Random
 using InteractiveDynamics
 using CairoMakie
+using BlackBoxOptim, Random
+using Statistics: mean
 
 
 
@@ -107,18 +109,18 @@ end
 # model = model_initialize()
 #
 # # #models with different seeds
-model_1 = model_initialize(seed = 125)
-model_2 = model_initialize(seed = 10)
-model_3 = model_initialize(seed = 500)
-
-
-adata = [:status]
-
-mdata = [total_infected, total_recovered, total_sus]
-
-_, model_df_1 = run!(model_1,dummystep,model_step!,10; adata, mdata)
-_, model_df_2 = run!(model_2,dummystep,model_step!,10; adata, mdata)
-_, model_df_3 = run!(model_3,dummystep,model_step!,10; adata, mdata)
+# model_1 = model_initialize(seed = 125)
+# model_2 = model_initialize(seed = 10)
+# model_3 = model_initialize(seed = 500)
+#
+#
+# adata = [:status]
+#
+# mdata = [total_infected, total_recovered, total_sus]
+#
+# _, model_df_1 = run!(model_1,dummystep,model_step!,10; adata, mdata)
+# _, model_df_2 = run!(model_2,dummystep,model_step!,10; adata, mdata)
+# _, model_df_3 = run!(model_3,dummystep,model_step!,10; adata, mdata)
 
 
   #parameters = Dict(:beta => collect(2:3), :gamma => [0.5,0.6],)
@@ -160,16 +162,16 @@ function plot_timeseries()
     recoveredl = lines!(ax, model_df_1.step, model_df_1.total_recovered, color = :orange)
     susceptiblel = lines!(ax, model_df_1.step, model_df_1.total_sus, color = :green)
 
-    infectedl_2 = lines!(ax, model_df_2.step, model_df_2.total_infected, color = :blue)
-    recoveredl_2 = lines!(ax, model_df_2.step, model_df_2.total_recovered, color = :orange)
-    susceptiblel_2 = lines!(ax, model_df_2.step, model_df_2.total_sus, color = :green)
+    infectedl_2 = lines!(ax, model_df_2.step, model_df_2.total_infected, color = :red)
+    recoveredl_2 = lines!(ax, model_df_2.step, model_df_2.total_recovered, color = :purple)
+    susceptiblel_2 = lines!(ax, model_df_2.step, model_df_2.total_sus, color = :black)
 
-    infectedl_3 = lines!(ax, model_df_2.step, model_df_3.total_infected, color = :blue)
-    recoveredl_3 = lines!(ax, model_df_3.step, model_df_3.total_recovered, color = :orange)
-    susceptiblel_3 = lines!(ax, model_df_3.step, model_df_3.total_sus, color = :green)
+    # infectedl_3 = lines!(ax, model_df_2.step, model_df_3.total_infected, color = :blue)
+    # recoveredl_3 = lines!(ax, model_df_3.step, model_df_3.total_recovered, color = :orange)
+    # susceptiblel_3 = lines!(ax, model_df_3.step, model_df_3.total_sus, color = :green)
 
 
-    figure[1, 2] = Legend(figure, [infectedl, recoveredl, susceptiblel,infectedl_2, recoveredl_2, susceptiblel_2,infectedl_3, recoveredl_3, susceptiblel_3], ["Infected", "Recovered", "Susceptible","Infected", "Recovered", "Susceptible","Infected", "Recovered", "Susceptible"])
+    figure[1, 2] = Legend(figure, [infectedl, recoveredl, susceptiblel,infectedl_2, recoveredl_2, susceptiblel_2], ["Infected (NO)", "Recovered (NO)", "Susceptible (NO)","Infected (OP)", "Recovered (OP)", "Susceptible (OP)"])
     figure
 
 end
@@ -192,7 +194,7 @@ function plot_population_timeseries(model_df)
 end
 
 
-plot_timeseries()
+#plot_timeseries()
 
 
 
@@ -227,3 +229,86 @@ plot_timeseries()
 # plot_population_timeseries(model_df_1)
 # plot_population_timeseries(model_df_2)
 # plot_population_timeseries(model_df_3)
+
+
+## Optimising function
+
+function cost(x)
+    model = model_initialize(;
+        beta = x[1],
+        gamma = x[2],
+    )
+
+    infected_fraction(model) =
+        count(a.status == :I for a in allagents(model)) / nagents(model)
+
+    _, data = run!(model,dummystep,model_step!,20;
+                    mdata = [infected_fraction], when_model = [14],
+                    replicates = 10,)
+
+    return mean(data.infected_fraction)#data.total_infected, data.total_recovered, data.total_sus
+end
+
+
+Random.seed!(10)
+
+x0 = [
+    2,
+    0.5,
+]
+
+cost(x0)
+
+
+result = bboptimize(cost,
+    SearchRange = [
+        (1, 10),
+        (0.1, 1),
+   ],
+   NumDimensions = 2,
+   MaxTime = 20,
+   )
+
+ best_fitness(result)
+
+ x = best_candidate(result)
+
+ Random.seed!(0)
+
+ model_1 = model_initialize(;
+     beta = x[1],
+     gamma = x[2],
+ )
+
+# best senario where total_inf = 2, total_recovered = 760, total_sus = 1
+ _, data_1 = run!(model, dummystep, model_step!,20;  mdata = [nagents], when_model = [14],
+ replicates = 10,)
+
+mean(data_1.nagents)
+
+_, data_2 = run!(model, dummystep, model_step!,20;  mdata = [total_infected, total_recovered, total_sus], when_model = [14],
+replicates = 10,)
+
+data_2
+
+
+model_non_op = model_initialize(beta = 2, gamma = 0.5)
+model_op = model_initialize(beta = x[1], gamma = x[2])
+
+
+adata = [:status]
+
+mdata = [total_infected, total_recovered, total_sus]
+
+_, model_df_1 = run!(model_non_op,dummystep,model_step!,10; adata, mdata)
+ _, model_df_2 = run!(model_op,dummystep,model_step!,10; adata, mdata)
+
+plot_timeseries()
+
+
+
+
+# model_2 = model_initialize(seed = 10)
+
+ #mdata = [total_infected, total_recovered, total_sus]
+ #cost(x0)

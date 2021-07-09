@@ -105,20 +105,23 @@ end
 
 #create the model
 # model = model_initialize()
-#
+
+
 # # #models with different seeds
-model_1 = model_initialize(seed = 125)
-model_2 = model_initialize(seed = 10)
-model_3 = model_initialize(seed = 500)
+#beta = infection rate and gamma = recovery rate
+#model 1 is the most suitable model with beta = 2.1, gamma = 0.65
+model_1 = model_initialize(beta = 2.1, gamma = 0.65) 
+model_2 = model_initialize(beta = 3, gamma = 0.5)
+model_3 = model_initialize(beta = 2.5, gamma = 0.5)
 
 
 adata = [:status]
 
 mdata = [total_infected, total_recovered, total_sus]
 
-_, model_df_1 = run!(model_1,dummystep,model_step!,10; adata, mdata)
-_, model_df_2 = run!(model_2,dummystep,model_step!,10; adata, mdata)
-_, model_df_3 = run!(model_3,dummystep,model_step!,10; adata, mdata)
+_, model_df_1 = run!(model_1,dummystep,model_step!,14; adata, mdata)
+_, model_df_2 = run!(model_2,dummystep,model_step!,14; adata, mdata)
+_, model_df_3 = run!(model_3,dummystep,model_step!,14; adata, mdata)
 
 
   #parameters = Dict(:beta => collect(2:3), :gamma => [0.5,0.6],)
@@ -157,22 +160,23 @@ function plot_timeseries()
     figure = Figure(resolution = (600, 400))
     ax = figure[1, 1] = Axis(figure; xlabel = "Step", ylabel = "Number infected")
     infectedl = lines!(ax, model_df_1.step, model_df_1.total_infected, color = :blue)
-    recoveredl = lines!(ax, model_df_1.step, model_df_1.total_recovered, color = :orange)
-    susceptiblel = lines!(ax, model_df_1.step, model_df_1.total_sus, color = :green)
+    #recoveredl = lines!(ax, model_df_1.step, model_df_1.total_recovered, color = :orange)
+    #susceptiblel = lines!(ax, model_df_1.step, model_df_1.total_sus, color = :green)
 
-    infectedl_2 = lines!(ax, model_df_2.step, model_df_2.total_infected, color = :blue)
-    recoveredl_2 = lines!(ax, model_df_2.step, model_df_2.total_recovered, color = :orange)
-    susceptiblel_2 = lines!(ax, model_df_2.step, model_df_2.total_sus, color = :green)
+    infectedl_2 = lines!(ax, model_df_2.step, model_df_2.total_infected, color = :orange)
+    #recoveredl_2 = lines!(ax, model_df_2.step, model_df_2.total_recovered, color = :orange)
+    #susceptiblel_2 = lines!(ax, model_df_2.step, model_df_2.total_sus, color = :green)
 
-    infectedl_3 = lines!(ax, model_df_2.step, model_df_3.total_infected, color = :blue)
-    recoveredl_3 = lines!(ax, model_df_3.step, model_df_3.total_recovered, color = :orange)
-    susceptiblel_3 = lines!(ax, model_df_3.step, model_df_3.total_sus, color = :green)
+    infectedl_3 = lines!(ax, model_df_2.step, model_df_3.total_infected, color = :green)
+    #recoveredl_3 = lines!(ax, model_df_3.step, model_df_3.total_recovered, color = :orange)
+    #susceptiblel_3 = lines!(ax, model_df_3.step, model_df_3.total_sus, color = :green)
 
 
-    figure[1, 2] = Legend(figure, [infectedl, recoveredl, susceptiblel,infectedl_2, recoveredl_2, susceptiblel_2,infectedl_3, recoveredl_3, susceptiblel_3], ["Infected", "Recovered", "Susceptible","Infected", "Recovered", "Susceptible","Infected", "Recovered", "Susceptible"])
+    figure[1, 2] = Legend(figure, [infectedl,infectedl_2,infectedl_3], ["Model 1", "Model 2", "Model 3"])
     figure
 
 end
+
 
 
 
@@ -193,37 +197,4 @@ end
 
 
 plot_timeseries()
-
-
-
-    #
-    # Plots.plot(model_df_1.step, model_df_1.total_infected, label = "Infected", color="blue")
-    # Plots.plot!(model_df_2.step, model_df_2.total_infected, label = "")
-
-    #
-    # Plots.plot(model_df_1.step, model_df_1.total_infected)
-    # Plots.plot!(model_df_2.step, model_df_2.total_infected)
-
-# function subset_data(model_df)
-#     for i in 1:size(model_df, 1)
-#         if (model_df.step)
-#
-#     end
-#
-#
-#     A = DataFrame()
-#     while (model_df.step )
-#
-#
-#
-#     for i in model_df
-#         while
-#
-#     end
-# end
-
-
-#
-# plot_population_timeseries(model_df_1)
-# plot_population_timeseries(model_df_2)
-# plot_population_timeseries(model_df_3)
+plot_population_timeseries(model_df_1)
