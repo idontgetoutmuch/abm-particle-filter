@@ -249,6 +249,23 @@ function cost(x)
     return mean(data.infected_fraction)#data.total_infected, data.total_recovered, data.total_sus
 end
 
+function myCost(x, ys)
+    model = model_initialize(;
+        beta = x[1],
+        gamma = x[2],
+    )
+
+    _, data = run!(model,dummystep,model_step!,20;
+                    mdata = [total_infected], when_model = collect(1:14),
+                   replicates = 1,)
+    s = 0
+    for i = 1:14
+        s = s + (data.total_infected[i] - ys[i])^2
+    end
+    return Float64(s)
+end
+
+partCost(ys) = x -> myCost(x, ys)
 
 Random.seed!(10)
 
@@ -257,8 +274,11 @@ x0 = [
     0.5,
 ]
 
+actuals = [3, 8, 28, 76, 222, 293, 257, 237, 192, 126, 70, 28, 12, 5]
+
 cost(x0)
 
+partCost(actuals)(x0)
 
 result = bboptimize(cost,
     SearchRange = [
@@ -267,7 +287,16 @@ result = bboptimize(cost,
    ],
    NumDimensions = 2,
    MaxTime = 20,
-   )
+                    )
+
+result = bboptimize(partCost(actuals),
+    SearchRange = [
+        (1, 10),
+        (0.1, 1),
+   ],
+   NumDimensions = 2,
+   MaxTime = 20,
+                    )
 
  best_fitness(result)
 
@@ -301,7 +330,7 @@ adata = [:status]
 mdata = [total_infected, total_recovered, total_sus]
 
 _, model_df_1 = run!(model_non_op,dummystep,model_step!,10; adata, mdata)
- _, model_df_2 = run!(model_op,dummystep,model_step!,10; adata, mdata)
+_, model_df_2 = run!(model_op,dummystep,model_step!,10; adata, mdata);
 
 plot_timeseries()
 
