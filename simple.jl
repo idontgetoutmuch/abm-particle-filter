@@ -115,7 +115,26 @@ function k(x)
     f_g(x, g)
 end
 
+# DJS to change this to accept HA's function which takes S I R beta
+# gamma and returns S I R one time step ahead.
 function pf(inits, N, f, h, y, Q, R, nx)
+    # inits - initial values
+
+    # N - number of particles
+
+    # f is the state update function - for us this is the ABM - takes
+    # a state and the parameters and returns a new state one time step
+    # forward
+
+    # h is the observation function - for us the state is S, I, R
+    # (although S + I + R = total boys) but we can only observe I
+
+    # y is the data - for us this the number infected for each of the
+    # 14 days
+
+    # To avoid particle collapse we need to perturb the parameters -
+    # we do this by sampling from a multivariate normal distribution
+    # with a given covariance matrix Q
 
     T = length(y)
     log_w = zeros(T,N);
@@ -126,14 +145,37 @@ function pf(inits, N, f, h, y, Q, R, nx)
     for t = 1:T
         if t >= 2
             a = resample_stratified(wn);
+
+            # We need to change this line to update the state (S I R)
+            # with the ABM and update the parameters by adding a
+            # sample from a multivariate normal distribution - since
+            # we have two parameters this is a 2 dimensional
+            # multivariate normal distribution.
+
+            # So take the S I R beta and gamma and produce a new S I R
+            # using the ABM and produce new beta and gamma using a
+            # random sample.
+
+            # beta is about 2.0 and gamma is about 0.5 so we should
+            # probably take the covariance matrix to be
+
+            # [0.1 0.0; 0.0 0.01]
+
             x_pf[:, :, t] = hcat(f(x_pf[:, a, t-1])...) + rand(MvNormal(zeros(nx), Q), N)
         end
+
+        # For now choose R to be [0.1]
+
         log_w[t, :] = logpdf(MvNormal(y[t, :], R), h(x_pf[:,:,t]));
+
+        # To avoid underflow subtract the maximum before moving from
+        # log space
+
         wn = map(x -> exp(x), log_w[t, :] .- maximum(log_w[t, :]));
         wn = wn / sum(wn);
     end
 
-    log_W = sum(map(log, map(x -> x / N, sum(map(exp, bar[1:10, :]), dims=2))));
+    log_W = sum(map(log, map(x -> x / N, sum(map(exp, log_w[1:T, :]), dims=2))));
 
     return(x_pf, log_w, log_W)
 
