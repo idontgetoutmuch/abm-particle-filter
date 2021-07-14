@@ -18,7 +18,7 @@ mutable struct Student <: AbstractAgent
     status::Symbol  # 1: S, 2: I, 3:R
 end
 
-function model_initialize(; num_students = 763, beta = 2, gamma = 0.5, seed = 125)
+function model_initialize(; num_students = 763, beta = 2, gamma = 0.5, seed = 500)
     rng = Random.MersenneTwister(seed)
     # create properties for gamma and beta which can then be changed later
     # seed passed in as a property due to errors
@@ -110,8 +110,8 @@ end
 # # #models with different seeds
 #beta = infection rate and gamma = recovery rate
 #model 1 is the most suitable model with beta = 2.1, gamma = 0.65
-model_1 = model_initialize(beta = 2.1, gamma = 0.65) 
-model_2 = model_initialize(beta = 3, gamma = 0.5)
+model_1 = model_initialize(beta = 2.1, gamma = 0.65)
+model_2 = model_initialize(beta = 2, gamma = 0.5)
 model_3 = model_initialize(beta = 2.5, gamma = 0.5)
 
 

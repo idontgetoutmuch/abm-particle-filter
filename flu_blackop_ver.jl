@@ -193,62 +193,26 @@ function plot_population_timeseries(model_df)
     figure
 end
 
-
-#plot_timeseries()
-
-
-
-    #
-    # Plots.plot(model_df_1.step, model_df_1.total_infected, label = "Infected", color="blue")
-    # Plots.plot!(model_df_2.step, model_df_2.total_infected, label = "")
-
-    #
-    # Plots.plot(model_df_1.step, model_df_1.total_infected)
-    # Plots.plot!(model_df_2.step, model_df_2.total_infected)
-
-# function subset_data(model_df)
-#     for i in 1:size(model_df, 1)
-#         if (model_df.step)
-#
-#     end
-#
-#
-#     A = DataFrame()
-#     while (model_df.step )
-#
-#
-#
-#     for i in model_df
-#         while
-#
-#     end
-# end
-
-
-#
-# plot_population_timeseries(model_df_1)
-# plot_population_timeseries(model_df_2)
-# plot_population_timeseries(model_df_3)
-
-
 ## Optimising function
 
-function cost(x)
-    model = model_initialize(;
-        beta = x[1],
-        gamma = x[2],
-    )
+# original function - not working
+# function cost(x)
+#     model = model_initialize(;
+#         beta = x[1],
+#         gamma = x[2],
+#     )
+#
+#     infected_fraction(model) =
+#         count(a.status == :I for a in allagents(model)) / nagents(model)
+#
+#     _, data = run!(model,dummystep,model_step!,20;
+#                     mdata = [infected_fraction], when_model = [14],
+#                     replicates = 10,)
+#
+#     return mean(data.infected_fraction)#data.total_infected, data.total_recovered, data.total_sus
+# end
 
-    infected_fraction(model) =
-        count(a.status == :I for a in allagents(model)) / nagents(model)
-
-    _, data = run!(model,dummystep,model_step!,20;
-                    mdata = [infected_fraction], when_model = [14],
-                    replicates = 10,)
-
-    return mean(data.infected_fraction)#data.total_infected, data.total_recovered, data.total_sus
-end
-
+# new cost function
 function myCost(x, ys)
     model = model_initialize(;
         beta = x[1],
@@ -265,30 +229,36 @@ function myCost(x, ys)
     return Float64(s)
 end
 
+#define part cost function
 partCost(ys) = x -> myCost(x, ys)
 
 Random.seed!(10)
 
+#x0 with values used in simulation
 x0 = [
     2,
     0.5,
 ]
 
+#actual values
 actuals = [3, 8, 28, 76, 222, 293, 257, 237, 192, 126, 70, 28, 12, 5]
+
 
 cost(x0)
 
+#part cost of actuals vs simulation values
 partCost(actuals)(x0)
 
-result = bboptimize(cost,
-    SearchRange = [
-        (1, 10),
-        (0.1, 1),
-   ],
-   NumDimensions = 2,
-   MaxTime = 20,
-                    )
+# result = bboptimize(cost,
+#     SearchRange = [
+#         (1, 10),
+#         (0.1, 1),
+#    ],
+#    NumDimensions = 2,
+#    MaxTime = 20,
+#                     )
 
+# optimise result
 result = bboptimize(partCost(actuals),
     SearchRange = [
         (1, 10),
@@ -304,35 +274,43 @@ result = bboptimize(partCost(actuals),
 
  Random.seed!(0)
 
+#model generated from optimised values
  model_1 = model_initialize(;
      beta = x[1],
      gamma = x[2],
  )
 
-# best senario where total_inf = 2, total_recovered = 760, total_sus = 1
- _, data_1 = run!(model, dummystep, model_step!,20;  mdata = [nagents], when_model = [14],
- replicates = 10,)
+# # best senario where total_inf = 2, total_recovered = 760, total_sus = 1
+#  _, data_1 = run!(model, dummystep, model_step!,20;  mdata = [nagents], when_model = [14],
+#  replicates = 10,)
+#
+# mean(data_1.nagents)
+#
+# _, data_2 = run!(model, dummystep, model_step!,20;  mdata = [total_infected, total_recovered, total_sus], when_model = [14],
+# replicates = 10,)
+#
+# data_2
 
-mean(data_1.nagents)
 
-_, data_2 = run!(model, dummystep, model_step!,20;  mdata = [total_infected, total_recovered, total_sus], when_model = [14],
-replicates = 10,)
-
-data_2
-
-
-model_non_op = model_initialize(beta = 2, gamma = 0.5)
+#model_non_op = model_initialize(beta = 2, gamma = 0.5)
 model_op = model_initialize(beta = x[1], gamma = x[2])
-
 
 adata = [:status]
 
 mdata = [total_infected, total_recovered, total_sus]
 
-_, model_df_1 = run!(model_non_op,dummystep,model_step!,10; adata, mdata)
+#_, model_df_1 = run!(model_non_op,dummystep,model_step!,10; adata, mdata)
 _, model_df_2 = run!(model_op,dummystep,model_step!,10; adata, mdata);
 
-plot_timeseries()
+#plot_timeseries()
+
+
+##new plots
+
+#optimised version
+Plots.plot(model_df_2.step, model_df_2.total_infected, labels = "Optimised Version", legend = :left)
+#actual version
+Plots.plot!(model_df_2.step, actuals[1:11], title = "Total population infected", labels = "Actual version", legend = :left, xlabel = "Day", ylabel = "Number of cases")
 
 
 

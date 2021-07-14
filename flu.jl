@@ -104,28 +104,40 @@ end
 ## data collection and run model
 
 #create the model
-# model = model_initialize()
+#model = model_initialize()
 #
 # # #models with different seeds
-model_1 = model_initialize(seed = 125)
-model_2 = model_initialize(seed = 10)
-model_3 = model_initialize(seed = 500)
-
-
+#model_1 = model_initialize(seed = 400)
+# model_2 = model_initialize(seed = 10)
+# model_3 = model_initialize(seed = 500)
+#
+#
 adata = [:status]
 
 mdata = [total_infected, total_recovered, total_sus]
-
-_, model_df_1 = run!(model_1,dummystep,model_step!,10; adata, mdata)
-_, model_df_2 = run!(model_2,dummystep,model_step!,10; adata, mdata)
-_, model_df_3 = run!(model_3,dummystep,model_step!,10; adata, mdata)
+#
+ #_, model_df = run!(model_1,dummystep,model_step!,10; adata, mdata)
+# _, model_df_2 = run!(model_2,dummystep,model_step!,10; adata, mdata)
+# _, model_df_3 = run!(model_3,dummystep,model_step!,10; adata, mdata)
 
 
   #parameters = Dict(:beta => collect(2:3), :gamma => [0.5,0.6],)
 
-# parameters = Dict(:seed => [10,500])
-# # #
-#   _, model_df = paramscan(parameters, model_initialize; adata, mdata, model_step!, n = 10)
+parameters_1 = Dict(:seed => [500,456,567,125])
+#
+ _, model_df = paramscan(parameters_1, model_initialize; adata, mdata, model_step!, n = 10)
+
+## plots
+
+Plots.plot(model_df[1:11,:].step, model_df[1:11,:].total_infected, labels = "S = 500", legend = :top)
+Plots.plot!(model_df[23:33,:].step, model_df[23:33,:].total_infected, labels = "S = 567", legend = :top)
+Plots.plot!(model_df[34:44,:].step, model_df[23:33,:].total_infected, labels = "S = 125", legend = :top)
+#actual version
+Plots.plot!(model_df.step[12:22,:], model_df.total_infected[12:22,:], title = "Model with diff seeds", labels = "S = 456", legend = :top, xlabel = "Day", ylabel = "Number of cases")
+
+
+
+
 
 ##plotting function
 
@@ -192,7 +204,9 @@ function plot_population_timeseries(model_df)
 end
 
 
-plot_timeseries()
+#plot_population_timeseries(model_df)
+
+#plot_timeseries()
 
 
 
