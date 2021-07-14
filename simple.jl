@@ -1,33 +1,59 @@
+using Pkg
+pkg"activate ."
+
 using Random
 using Distributions
+using Gadfly
+using LinearAlgebra
 
+# FIXME: This doesn't seem to give reproducibility
 rng = MersenneTwister(1234);
 
-T = 200;
-a_th = 0.4;
-u = rand(Normal(0.0, 1.0), 1, T);
-Q = 1;
-R = 1;
-x = zeros(T + 1, 1);
-y = zeros(1, T);
-for t = 1:T
-    if t <= T
-        x[t+1] = abs(x[t])^a_th + u[t] + sqrt(Q) * rand(Normal(0.0, 1.0), 1)[1];
-    end
-    y[t] = x[t] + sqrt(R) * rand(Normal(0.0, 1.0), 1)[1];
-end
-y = y[:,1:T]';
-u = u[:,1:T]';
+T = 500;
 
-function f_g(x,u,k)
-    abs(x).^k + u;
+deltaT = 0.01;
+g  = 9.81;
+
+qc1 = 0.0001;
+
+bigQ = [ qc1 * deltaT^3 / 3 qc1 * deltaT^2 / 2;
+         qc1 * deltaT^2 / 2       qc1 * deltaT
+         ];
+
+bigR  = [0.01];
+
+x = zeros(T + 1, 2);
+y = zeros(T,     1);
+
+x[1, :] = [0.01 0];
+
+for t = 2:T+1
+    epsilon = rand(MvNormal(zeros(1), bigR));
+    y[t - 1, :] = sin(x[t- 1, 1]) .+ epsilon
+    x1 = x[t - 1, 1] + x[t - 1, 2] * deltaT;
+    x2 = x[t - 1, 2] - g * sin(x[t - 1, 1]) * deltaT;
+    eta = rand(MvNormal(zeros(2), bigQ));
+    xNew = [x1, x2] .+ eta;
+    x[t, :] = xNew;
 end
 
-function g(x,u)
-    x;
+plot(layer(y = x[1:T,1], Geom.line, Theme(default_color=color("red"))), layer(y = y[1:T,1], Geom.point))
+
+function ff(x, g)
+    x1 = x[1] + x[2] * deltaT;
+    x2 = x[2] - g * sin(x[1]) * deltaT;
+    [x1, x2];
 end
 
-nx = 1;
+function f_g(x, k)
+    map(y -> ff(y, k), mapslices(y -> [y], x, dims = 1))
+end
+
+function h(x)
+    map(z -> sin(z[1]), mapslices(y->[y], x, dims=1))
+end
+
+nx = 2;
 
 n_th = 1;
 
@@ -85,31 +111,85 @@ function resample_stratified( weights )
     return indexes
 end
 
-# function [ log_W, x_pf_t, log_w_t ] = pf( N, f, g, u, y, Q, R, nx)
-function pf( N, f, g, u, y, Q, R, nx)
+function k(x)
+    f_g(x, g)
+end
 
-    T = length(u);
+# DJS to change this to accept HA's function which takes S I R beta
+# gamma and returns S I R one time step ahead.
+function pf(inits, N, f, h, y, Q, R, nx)
+    # inits - initial values
+
+    # N - number of particles
+
+    # f is the state update function - for us this is the ABM - takes
+    # a state and the parameters and returns a new state one time step
+    # forward
+
+    # h is the observation function - for us the state is S, I, R
+    # (although S + I + R = total boys) but we can only observe I
+
+    # y is the data - for us this the number infected for each of the
+    # 14 days
+
+    # To avoid particle collapse we need to perturb the parameters -
+    # we do this by sampling from a multivariate normal distribution
+    # with a given covariance matrix Q
+
+    T = length(y)
     log_w = zeros(T,N);
     x_pf = zeros(nx,N,T);
-
-    Q_chol = chol(Q);
+    x_pf[:,:,1] = inits;
+    wn = zeros(N);
 
     for t = 1:T
         if t >= 2
-            a = systematic_resampling(wn,N);
-            x_pf(:,:,t) = f(x_pf(:,a,t-1),u(t-1,:)) + Q_chol*randn(nx,N);
+            a = resample_stratified(wn);
+
+            # We need to change this line to update the state (S I R)
+            # with the ABM and update the parameters by adding a
+            # sample from a multivariate normal distribution - since
+            # we have two parameters this is a 2 dimensional
+            # multivariate normal distribution.
+
+            # So take the S I R beta and gamma and produce a new S I R
+            # using the ABM and produce new beta and gamma using a
+            # random sample.
+
+            # beta is about 2.0 and gamma is about 0.5 so we should
+            # probably take the covariance matrix to be
+
+            # [0.1 0.0; 0.0 0.01]
+
+            x_pf[:, :, t] = hcat(f(x_pf[:, a, t-1])...) + rand(MvNormal(zeros(nx), Q), N)
         end
-        log_w(t,:) = mvnpdf_log(g(x_pf(:,:,t),u(t,:))',y(t,:),R)';
-        wn = exp(log_w(t,:) - max(log_w(t,:)));
-        wn = wn/sum(wn);
+
+        # For now choose R to be [0.1]
+
+        log_w[t, :] = logpdf(MvNormal(y[t, :], R), h(x_pf[:,:,t]));
+
+        # To avoid underflow subtract the maximum before moving from
+        # log space
+
+        wn = map(x -> exp(x), log_w[t, :] .- maximum(log_w[t, :]));
+        wn = wn / sum(wn);
     end
 
-x_pf_t = x_pf(:,:,T);
-log_w_t = log_w(T,:);
+    log_W = sum(map(log, map(x -> x / N, sum(map(exp, log_w[1:T, :]), dims=2))));
 
-log_W = sum(log(1/N*sum(exp(log_w),2)));
+    return(x_pf, log_w, log_W)
 
 end
+
+N = 50;
+
+inits = zeros(nx, N);
+inits[1, :] .= 0.01;
+inits[2, :] .= 0.00;
+
+(foo, bar, baz) = pf(inits, N, k, h, y, bigQ, bigR, nx);
+
+plot(layer(y = x[1:T,1], Geom.line, Theme(default_color=color("red"))), layer(y = map(x -> x / 50, sum(foo[1,:,:],dims=1)), Geom.line))
 
 function pmh( K, N, n_th, u, y, f_g, g, nx, prior_sample, prior_pdf, Q, R)
 

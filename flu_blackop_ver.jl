@@ -1,5 +1,5 @@
 using Agents, Random, DataFrames, LightGraphs
-using Distributions: Poisson, DiscreteNonParametric
+using Distributions: Poisson, DiscreteNonParametric, MvNormal
 using DrWatson: @dict
 using Plots
 using Random
@@ -319,3 +319,99 @@ Plots.plot!(model_df_2.step, actuals[1:11], title = "Total population infected",
 
  #mdata = [total_infected, total_recovered, total_sus]
  #cost(x0)
+
+# ------------------
+# Partcile Filtering
+# ------------------
+
+# Parameter update covariace aka parameter diffusivity
+Q = [0.1 0.0; 0.0 0.01];
+# Observation covariance
+R = [0.1];
+# Number of particles
+N = 50;
+# S, I, beta and gamma
+nx = 4;
+# S and I since S + I + R = 763 always - no boys die
+ny = 2;
+
+function resample_stratified(weights)
+
+    N = length(weights)
+    # make N subdivisions, and chose a random position within each one
+    positions =  (rand(N) + collect(range(0, N - 1, length = N))) / N
+
+    indexes = zeros(Int64, N)
+    cumulative_sum = cumsum(weights)
+    i, j = 1, 1
+    while i <= N
+        if positions[i] < cumulative_sum[j]
+            indexes[i] = j
+            i += 1
+        else
+            j += 1
+        end
+    end
+    return indexes
+end
+
+function pf(inits, N, f, h, y, Q, R, nx, ny)
+    # inits - initial values
+
+    # N - number of particles
+
+    # f is the state update function - for us this is the ABM - takes
+    # a state and the parameters and returns a new state one time step
+    # forward
+
+    # h is the observation function - for us the state is S, I, R
+    # (although S + I + R = total boys) but we can only observe I
+
+    # y is the data - for us this the number infected for each of the
+    # 14 days
+
+    # To avoid particle collapse we need to perturb the parameters -
+    # we do this by sampling from a multivariate normal distribution
+    # with a given covariance matrix Q
+
+    # R is the observation covariance matrix
+
+    # nx is the dimension of the state - we have S I R beta and gamma
+    # but S + I + R is fixed so we can take the state to be S I beta
+    # gamma i.e. nx = 4
+
+    # The state update function (running the ABM) returns the new
+    # state so we need to know which of the nx state variables are the
+    # actual state and which are parameters which we now consider to
+    # be state. ny is the number of actual state variables so that
+    # nx - ny is the number of parameters.
+
+    T = length(y)
+    log_w = zeros(T,N);
+    x_pf = zeros(nx,N,T);
+    x_pf[:,:,1] = inits;
+    wn = zeros(N);
+
+    for t = 1:T
+        if t >= 2
+            a = resample_stratified(wn);
+
+            x_pf[1 : ny, :, t] = hcat(f(x_pf[:, a, t - 1])...)
+            x_pf[ny + 1 : ny + nx, :, t] = x_pf[ny + 1 : ny + nx, a, t - 1] + rand(MvNormal(zeros(nx - ny), Q), N)
+        end
+
+        log_w[t, :] = logpdf(MvNormal(y[t, :], R), h(x_pf[:,:,t]));
+
+        # To avoid underflow subtract the maximum before moving from
+        # log space
+
+        wn = map(x -> exp(x), log_w[t, :] .- maximum(log_w[t, :]));
+        wn = wn / sum(wn);
+    end
+
+    log_W = sum(map(log, map(x -> x / N, sum(map(exp, log_w[1:T, :]), dims=2))));
+
+    return(x_pf, log_w, log_W)
+
+end
+
