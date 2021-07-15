@@ -11,7 +11,7 @@ using Gadfly
 using LinearAlgebra
 
 #how many students
-#num_students = 763
+num_students = 763
 
 #Agent type
 mutable struct Student <: AbstractAgent
@@ -66,7 +66,7 @@ function transmit_and_recover!(model)
     index = 0
 
     ##returns int value of number infected
-    new_infected = rand(rng,Poisson(total_suspec * total_inf * beta_param / 763))
+    new_infected = rand(rng,Poisson(total_suspec * total_inf * beta_param / num_students))
 
     ##infect students based on how above formula
     for a in allagents(model)
@@ -168,28 +168,25 @@ function simulate_one_step(vec)
     rng = Random.MersenneTwister(seed)
 
     ##values of SIR that were passed in as params
-    total_suspec = vec[1]
-    total_inf = vec[2]
-    total_rec = vec[3]
-    beta = vec[4]
+    oldS  = vec[1]
+    oldI  = vec[2]
+    oldR  = vec[3]
+    beta  = vec[4]
     gamma = vec[5]
 
-
     ##returns int value of number infected
-    new_infected = rand(rng,Poisson(total_suspec * total_inf * beta / 763))
+    new_infected = rand(rng, Poisson(oldS * oldI * beta / num_students))
+    valid_infected = min(new_infected, oldS)
 
     #determine the number of newly recovered individuals
-    new_recover = rand(rng, Poisson(total_inf*gamma))
+    new_recover = rand(rng, Poisson(oldI * gamma))
+    valid_recover = min(new_recover, oldI)
 
-    #determine the total number of valid individuals
-    valid_recover = min(new_recover,I)
+    newS = oldS - valid_infected
+    newI = oldI + valid_infected - valid_recover
+    newR = oldR + valid_recover
 
-
-    #since S + I + R = 763 --> calculate S from this
-    valid_sus = 763 - (valid_recover + new_infected)
-
-
-    output = [valid_sus, new_infected, valid_recover, beta, gamma]
+    output = [newS newI newR]
 
     return (output)
 
@@ -202,9 +199,10 @@ end
 # Parameter update covariace aka parameter diffusivity
 Q = [0.1 0.0; 0.0 0.01];
 # Observation covariance
-R = [0.1];
+R = Matrix{Float64}(undef,1,1);
+R[1,1] = 0.1;
 # Number of particles
-N = 50;
+N = 1000;
 # S, I, R beta and gamma
 nx = 5;
 # S and I since S + I + R = 763 always - no boys die
@@ -233,7 +231,7 @@ end
 
 
 
-function pf(inits, N, f, h, y, Q, R, nx, ny)
+function pf(inits, N, f, hh, y, Q, R, nx, ny)
     # inits - initial values
 
     # N - number of particles
@@ -274,11 +272,14 @@ function pf(inits, N, f, h, y, Q, R, nx, ny)
         if t >= 2
             a = resample_stratified(wn);
             #f is a vector S I R beta gamma - vector of len 5
-            x_pf[1 : ny, :, t] = hcat(f(x_pf[:, a, t - 1])...)
-            x_pf[ny + 1 : ny + nx, :, t] = x_pf[ny + 1 : ny + nx, a, t - 1] + rand(MvNormal(zeros(nx - ny), Q), N)
+            x_pf[1 : ny, :, t] = hcat(map(f, mapslices(z -> [z], x_pf[:, a, t - 1], dims = 1))...)
+            log_x_pf = map(log, x_pf[ny + 1 : nx, a, t - 1])
+            epsilons = rand(MvNormal(zeros(nx - ny), Q), N)
+            new_log_x_pf = log_x_pf .+ epsilons
+            x_pf[ny + 1 : nx, :, t] = map(exp, new_log_x_pf)
         end
 
-        log_w[t, :] = logpdf(MvNormal(y[t, :], R), h(x_pf[:,:,t]));
+        log_w[t, :] = logpdf(MvNormal(y[t, :], R), map(observe, mapslices(z -> [z], x_pf[:,:,t], dims=1)))
 
         # To avoid underflow subtract the maximum before moving from
         # log space
@@ -295,15 +296,15 @@ end
 
 # nx = S, I, R and beta gamma
 inits = zeros(nx, N)
-inits[1, :] .= 763;
+inits[1, :] .= 762;
 inits[2, :] .= 1;
 inits[3, :] .= 0;
-inits[4, :] .= rand(LogNormal(log(2),0.1),N)
-inits[5, :] .= rand(LogNormal(log(0.5),0.05),N);
+inits[4, :] .= rand(LogNormal(log(2),0.01),N)
+inits[5, :] .= rand(LogNormal(log(0.5),0.005),N);
 
 
 #actual values
-y = [3, 8, 28, 76, 222, 293, 257, 237, 192, 126, 70, 28, 12, 5]
+y = [1, 3, 8, 28, 76, 222, 293, 257, 237, 192, 126, 70, 28, 12, 5]
 
 (foo, bar, baz) = pf(inits, N, simulate_one_step, observe, y, Q, R, nx, ny);
 
