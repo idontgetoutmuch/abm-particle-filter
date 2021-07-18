@@ -102,70 +102,23 @@ function transmit_and_recover!(model)
 
 end
 
-## data collection and run model
-
-#create the model
-# model = model_initialize()
-#
-# # #models with different seeds
-# model_1 = model_initialize(seed = 125)
-# model_2 = model_initialize(seed = 10)
-# model_3 = model_initialize(seed = 500)
-#
-#
-# adata = [:status]
-#
-# mdata = [total_infected, total_recovered, total_sus]
-#
-# _, model_df_1 = run!(model_1,dummystep,model_step!,10; adata, mdata)
-# _, model_df_2 = run!(model_2,dummystep,model_step!,10; adata, mdata)
-# _, model_df_3 = run!(model_3,dummystep,model_step!,10; adata, mdata)
-
-
-  #parameters = Dict(:beta => collect(2:3), :gamma => [0.5,0.6],)
-
-# parameters = Dict(:seed => [10,500])
-# # #
-#   _, model_df = paramscan(parameters, model_initialize; adata, mdata, model_step!, n = 10)
-
-
-
-## Optimising function
-
-#actual values
-# actuals = [3, 8, 28, 76, 222, 293, 257, 237, 192, 126, 70, 28, 12, 5]
-
-
-
-#model_non_op = model_initialize(beta = 2, gamma = 0.5)
-model_op = model_initialize(beta = x[1], gamma = x[2])
-
-adata = [:status]
-
-mdata = [total_infected, total_recovered, total_sus]
-
-#_, model_df_1 = run!(model_non_op,dummystep,model_step!,10; adata, mdata)
-_, model_df_2 = run!(model_op,dummystep,model_step!,10; adata, mdata);
-
-#plot the one with optimal params by eye
-model_1 = model_initialize(beta = 2.1, gamma = 0.85, seed = 50)
-
-_, model_df_1 = run!(model_1,dummystep,model_step!,10; adata, mdata)
-
-
 
 ## one time step function
 
+#to observe the infected
 function observe(v)
     return (v[2])
 
 end
 
-# DJS to change this to accept HA's function which takes S I R beta
-# gamma and returns S I R one time step ahead.
+seed = 500
+rng = Random.MersenneTwister(seed)
+
+
+#Simulates one time step and returns the S, I , R, Beta and Gamma
 function simulate_one_step(vec)
-    seed = 500
-    rng = Random.MersenneTwister(seed)
+    #seed = 500
+    #rng = Random.MersenneTwister(seed)
 
     ##values of SIR that were passed in as params
     oldS  = vec[1]
@@ -182,10 +135,12 @@ function simulate_one_step(vec)
     new_recover = rand(rng, Poisson(oldI * gamma))
     valid_recover = min(new_recover, oldI)
 
+    #determine the new number of susceptible, infected and recovered
     newS = oldS - valid_infected
     newI = oldI + valid_infected - valid_recover
     newR = oldR + valid_recover
 
+    #in a vector format
     output = [newS newI newR]
 
     return (output)
@@ -193,11 +148,15 @@ function simulate_one_step(vec)
 end
 
 # ------------------
-# Pariticle Filtering
+# Particle Filtering
 # ------------------
 
 # Parameter update covariace aka parameter diffusivity
-Q = [0.1 0.0; 0.0 0.01];
+Q = [0.1 0.0; 0.0 0.01]; #--> spread is ok, peak is not
+#Q = [0.01 0.0; 0.0 0.01]; #--> spread does not change, peak is flattened
+#Q = [0.001 0.0; 0.0 0.001]; #--> spread effected, peak is flattened
+#Q = [0.005 0.0; 0.0 0.05]; #--> does not reflect spread
+
 # Observation covariance
 R = Matrix{Float64}(undef,1,1);
 R[1,1] = 0.1;
@@ -306,37 +265,67 @@ inits[5, :] .= rand(LogNormal(log(0.5),0.005),N);
 #actual values
 y = [1, 3, 8, 28, 76, 222, 293, 257, 237, 192, 126, 70, 28, 12, 5]
 
+
+# foo is a 5x1000x15 array --> so observe 5 variables, 1000 particles and 15 time steps
+# so {:,:,1} = 762 762 = mean(row)
+#              1.0 1.0 = mean(row) --> these means will then be the point for t = 1
 (foo, bar, baz) = pf(inits, N, simulate_one_step, observe, y, Q, R, nx, ny);
 
+## Plots of mean sus, infected, recovered, beta and gamma and std for these
+
+overall_mean_matrix = zeros(15,5)
+overall_std_matrix = zeros(15,5)
+#calculate mean based on time step and store in a overall matrix for plotting
+for i in 1:15
+    (INF, REC,SUS,BE,GA) = mean(foo[:,:,i], dims = 2)
+    overall_mean_matrix[i,1] = INF
+    overall_mean_matrix[i,2] = REC
+    overall_mean_matrix[i,3] = SUS
+    overall_mean_matrix[i,4] = BE
+    overall_mean_matrix[i,5] = GA
+end
+
+for i in 1:15
+    (INF, REC,SUS,BE,GA) = std(foo[:,:,i], dims = 2)
+    overall_std_matrix[i,1] = INF
+    overall_std_matrix[i,2] = REC
+    overall_std_matrix[i,3] = SUS
+    overall_std_matrix[i,4] = BE
+    overall_std_matrix[i,5] = GA
+end
 
 
+## Plots
 
+step_vec = [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]
+actuals = [1, 3, 8, 28, 76, 222, 293, 257, 237, 192, 126, 70, 28, 12, 5]
 
-
-## Plotting function
-#optimised version
-#Plots.plot!(model_df_2.step, actuals[1:11], title = "Total population infected", labels = "Actual version", legend = :left, xlabel = "Day", ylabel = "Number of cases")
-
-Gadfly.plot(layer(x = model_df_2.step, y = model_df_2.total_infected, Geom.line, Gadfly.Theme(default_color=color("red"))),
-            layer(x = model_df_2.step, y = actuals[1:11], Geom.line, Gadfly.Theme(default_color=color("blue"))),
-            layer(x = model_df_1.step, y = model_df_1.total_infected, Geom.line, Gadfly.Theme(default_color=color("green"))),
+#SIR plot
+Gadfly.plot(layer(x = step_vec, y = overall_mean_matrix[:,1], Geom.line, Gadfly.Theme(default_color=color("red"))),
+            layer(x = step_vec, y = overall_mean_matrix[:,2], Geom.line, Gadfly.Theme(default_color=color("blue"))),
+            layer(x = step_vec, y = overall_mean_matrix[:,3], Geom.line, Gadfly.Theme(default_color=color("green"))),
+            layer(x = step_vec, y = actuals , Geom.line, Gadfly.Theme(default_color=color("black"))),
             Guide.XLabel("Day"),
             Guide.YLabel("Population"),
-            Guide.Title("Actual flu cases against different simulation versions"),
-            Guide.manual_color_key("Legend", ["Optimised version", "Actual data", "Approximated version"], ["red", "blue", "green"]))
+            Guide.Title("Particle filter data compared to actual data"),
+            Guide.manual_color_key("Legend", ["Susceptible", "Infected", "Recovered", "Actual"], ["red", "blue", "green", "black"]))
 
-
-Gadfly.plot(layer(x = model_df_2.step, y = model_df_2.total_recovered, Geom.line, Gadfly.Theme(default_color=color("red"))),
-            layer(x = model_df_1.step, y = model_df_1.total_recovered, Geom.line, Gadfly.Theme(default_color=color("green"))),
+#evolution of beta and gamma plot
+Gadfly.plot(layer(x = step_vec, y = overall_mean_matrix[:,4], Geom.line, Gadfly.Theme(default_color=color("red")), yintercept=[mean(overall_mean_matrix[:,4])],Geom.hline(style=:dot)),
+            layer(x = step_vec, y = overall_mean_matrix[:,5], Geom.line, Gadfly.Theme(default_color=color("blue")), yintercept=[mean(overall_mean_matrix[:,5])],Geom.hline(style=:dot)),
+            #layer(x = step_vec, y = mean(overall_mean_matrix[:,4]), Geom.line,Gadfly.Theme(default_color=color("black"))),
+            #yintercept=[mean(overall_mean_matrix[:,4]), mean(overall_mean_matrix[:,5]), Geom.point, Geom.hline(style=:dot),
             Guide.XLabel("Day"),
-            Guide.YLabel("Population"),
-            Guide.Title("Recovered lu cases simulated with different parameters"),
-            Guide.manual_color_key("Legend", ["Optimised version","Approximated version"], ["red", "green"]))
+            Guide.Title("Evolution of beta and gamma"),
+            Guide.manual_color_key("Legend", ["Beta", "Gamma"], ["red", "blue"]))
 
 
-Gadfly.plot(layer(x = model_df_2.step, y = model_df_2.total_sus, Geom.line, Gadfly.Theme(default_color=color("red"))),
-            layer(x = model_df_1.step, y = model_df_1.total_sus, Geom.line, Gadfly.Theme(default_color=color("green"))),
-            Guide.XLabel("Day"),
-            Guide.YLabel("Population"),
-            Guide.Title("Susceptible simulated with different parameters"),
-            Guide.manual_color_key("Legend", ["Optimised version","Approximated version"], ["red", "green"]))
+##STD plots -> not too sure if right
+# Gadfly.plot(layer(x = step_vec, y = overall_std_matrix[:,1], Geom.line, Gadfly.Theme(default_color=color("red"))),
+#             layer(x = step_vec, y = overall_std_matrix[:,2], Geom.line, Gadfly.Theme(default_color=color("blue"))),
+#             layer(x = step_vec, y = overall_std_matrix[:,3], Geom.line, Gadfly.Theme(default_color=color("green"))),
+#             layer(x = step_vec, y = overall_std_matrix[:,4], Geom.line, Gadfly.Theme(default_color=color("black"))),
+#             layer(x = step_vec, y = overall_std_matrix[:,5], Geom.line, Gadfly.Theme(default_color=color("pink"))),
+#             Guide.XLabel("Day"),
+#             Guide.Title("std of the different parameters"),
+#             Guide.manual_color_key("Legend", ["Susceptible", "Infected", "Recovered", "Beta", "Gamma"], ["red", "blue", "green", "black", "pink"]))
