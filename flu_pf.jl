@@ -337,3 +337,65 @@ Gadfly.plot(layer(x = step_vec, y = actuals, Geom.line, Gadfly.Theme(default_col
             # Guide.XLabel("Day"),
             # Guide.Title("std of the different parameters"),
             # Guide.manual_color_key("Legend", ["Susceptible", "Infected", "Recovered", "Beta", "Gamma"], ["red", "blue", "green", "black", "pink"]))
+
+
+# -------------------------------------
+# Particle Marginal Metropolis Hastings
+# -------------------------------------
+
+function prior_pdf(theta)
+    pdf(MvLogNormal(zeros(length(theta)), Matrix{Float64}(I, length(theta), length(theta))), theta)
+end
+
+function prior_sample(n)
+    rand(MvLogNormal(zeros(n), Matrix{Float64}(I, n, n)))
+end
+
+function pmh(inits, K, N, n_th, y, f_g, g, nx, prior_sample, prior_pdf, Q, R)
+
+    T = length(y);
+    theta = zeros(n_th, K+1);
+    log_W = -Inf;
+    # FIXME:
+    x_pfs = zeros(nx, N, T, K);
+
+    while log_W == -Inf # Find an initial sample without numerical problems
+        theta[:, 1] = map(exp, rand(MvNormal([log(2.0); log(0.5)], [0.1 0.0; 0.0 0.01] * Matrix{Float64}(I, 2, 2))));
+        # FIXME:
+        log_W = pf(inits, N, (x) -> f_g(x, theta[:, 1][1]), g, y, Q, R, nx)[3];
+    end
+
+    for k = 1:K
+        theta_prop = map(exp, map(log, theta[:, k]) + 0.01 * rand(MvNormal(zeros(n_th), 1), 1)[1, :]);
+        # log_W_prop = pf(inits, N, (x) -> f_g(x, theta_prop[1]), g, y, Q, R, nx)[3];
+        (a, b, c) = pf(inits, N, (x) -> f_g(x, theta_prop[1]), g, y, Q, R, nx);
+        log_W_prop = c;
+        x_pfs[:, :, :, k] = a;
+        mh_ratio = exp(log_W_prop - log_W) * prior_pdf(theta_prop) / prior_pdf(theta[:,k]);
+
+        display([theta[:, k], theta_prop, log_W, log_W_prop, mh_ratio, prior_pdf(theta_prop)]);
+
+        if isnan(mh_ratio)
+            alpha = 0;
+        else
+            alpha = min(1,mh_ratio);
+        end
+
+        dm = rand();
+        if dm < alpha
+            theta[:, k+1] = theta_prop;
+            log_W = log_W_prop;
+            new = true;
+        else
+            theta[:, k+1] = theta[:, k];
+            new = false;
+        end
+
+        # if new == true;
+        #     display(["PMH Sampling ", k, ": Proposal accepted!"]);
+        # else
+        #     display(["PMH Sampling ", k, ": Proposal rejected"]);
+        # end
+    end
+    return (x_pfs, theta);
+end
