@@ -294,6 +294,8 @@ for i in 1:15
     overall_std_matrix[i,5] = GA
 end
 
+#infceted, infected + 1 std and infected - 1 std
+
 
 ## Plots
 
@@ -321,11 +323,17 @@ Gadfly.plot(layer(x = step_vec, y = overall_mean_matrix[:,4], Geom.line, Gadfly.
 
 
 ##STD plots -> not too sure if right
-# Gadfly.plot(layer(x = step_vec, y = overall_std_matrix[:,1], Geom.line, Gadfly.Theme(default_color=color("red"))),
-#             layer(x = step_vec, y = overall_std_matrix[:,2], Geom.line, Gadfly.Theme(default_color=color("blue"))),
-#             layer(x = step_vec, y = overall_std_matrix[:,3], Geom.line, Gadfly.Theme(default_color=color("green"))),
-#             layer(x = step_vec, y = overall_std_matrix[:,4], Geom.line, Gadfly.Theme(default_color=color("black"))),
-#             layer(x = step_vec, y = overall_std_matrix[:,5], Geom.line, Gadfly.Theme(default_color=color("pink"))),
-#             Guide.XLabel("Day"),
-#             Guide.Title("std of the different parameters"),
-#             Guide.manual_color_key("Legend", ["Susceptible", "Infected", "Recovered", "Beta", "Gamma"], ["red", "blue", "green", "black", "pink"]))
+Gadfly.plot(layer(x = step_vec, y = actuals, Geom.line, Gadfly.Theme(default_color=color("red"))),
+            layer(x = step_vec, y = 2*overall_std_matrix[:,2] + overall_mean_matrix[:,2]  , Geom.line, Gadfly.Theme(default_color=color("blue"))),
+            layer(x = step_vec, y = overall_mean_matrix[:,2], Geom.line, Gadfly.Theme(default_color=color("green"))),
+            layer(x = step_vec, y = overall_mean_matrix[:,2] - 2*overall_std_matrix[:,2] , Geom.line, Gadfly.Theme(default_color=color("black"))),
+            #layer(x = step_vec, y = overall_std_matrix[:,5], Geom.line, Gadfly.Theme(default_color=color("pink"))),
+            # Guide.XLabel("Day"),
+            Guide.XLabel("Day"),
+            Guide.Title("std of the different parameters"),
+            Guide.manual_color_key("Legend", ["actuals", "Inf + 1 ", "Infected", "infect - 1"], ["red", "blue", "green", "black"]))
+            # Guide.Title("std of the different parameters"),
+            # Guide.manual_color_key("Legend", ["Infected"], ["red"]))
+            # Guide.XLabel("Day"),
+            # Guide.Title("std of the different parameters"),
+            # Guide.manual_color_key("Legend", ["Susceptible", "Infected", "Recovered", "Beta", "Gamma"], ["red", "blue", "green", "black", "pink"]))
