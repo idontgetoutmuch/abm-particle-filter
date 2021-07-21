@@ -9,6 +9,8 @@ using BlackBoxOptim, Random
 using Statistics: mean
 using Gadfly
 using LinearAlgebra
+using ColorBrewer
+using Compose
 
 #how many students
 num_students = 763
@@ -161,7 +163,7 @@ Q = [0.1 0.0; 0.0 0.01]; #--> spread is ok, peak is not
 R = Matrix{Float64}(undef,1,1);
 R[1,1] = 0.1;
 # Number of particles
-N = 1000;
+N = 1000; #1000;
 # S, I, R beta and gamma
 nx = 5;
 # S and I since S + I + R = 763 always - no boys die
@@ -271,7 +273,7 @@ y = [1, 3, 8, 28, 76, 222, 293, 257, 237, 192, 126, 70, 28, 12, 5]
 #              1.0 1.0 = mean(row) --> these means will then be the point for t = 1
 (foo, bar, baz) = pf(inits, N, simulate_one_step, observe, y, Q, R, nx, ny);
 
-## Plots of mean sus, infected, recovered, beta and gamma and std for these
+## Plots of mean sus, infected, recovered, beta and gamma and std --> based on time step
 
 overall_mean_matrix = zeros(15,5)
 overall_std_matrix = zeros(15,5)
@@ -295,6 +297,8 @@ for i in 1:15
 end
 
 #infceted, infected + 1 std and infected - 1 std
+
+
 
 
 ## Plots
@@ -322,7 +326,7 @@ Gadfly.plot(layer(x = step_vec, y = overall_mean_matrix[:,4], Geom.line, Gadfly.
             Guide.manual_color_key("Legend", ["Beta", "Gamma"], ["red", "blue"]))
 
 
-##STD plots -> not too sure if right
+#STD plots -> not too sure if right
 Gadfly.plot(layer(x = step_vec, y = actuals, Geom.line, Gadfly.Theme(default_color=color("red"))),
             layer(x = step_vec, y = 2*overall_std_matrix[:,2] + overall_mean_matrix[:,2]  , Geom.line, Gadfly.Theme(default_color=color("blue"))),
             layer(x = step_vec, y = overall_mean_matrix[:,2], Geom.line, Gadfly.Theme(default_color=color("green"))),
@@ -338,7 +342,61 @@ Gadfly.plot(layer(x = step_vec, y = actuals, Geom.line, Gadfly.Theme(default_col
             # Guide.Title("std of the different parameters"),
             # Guide.manual_color_key("Legend", ["Susceptible", "Infected", "Recovered", "Beta", "Gamma"], ["red", "blue", "green", "black", "pink"]))
 
+# Plots of all particles
+lines = [layer(x= step_vec,y= foo[2,i,:], Geom.line,Gadfly.Theme(line_width = 0.6mm)) for i in range(1,stop=50)] #change this for more paths
+actuals_line = [layer(x = step_vec, y = actuals, Geom.line, Gadfly.Theme(default_color=color("red"),line_width = 1mm))]
+two_plus_std_line = [layer(x = step_vec, y = 2*overall_std_matrix[:,2] + overall_mean_matrix[:,2]  , Geom.line, Gadfly.Theme(default_color=color("black"),line_width = 0.7mm))]
+two_minus_std_line = [layer(x = step_vec, y = overall_mean_matrix[:,2] - 2*overall_std_matrix[:,2] , Geom.line, Gadfly.Theme(default_color=color("green"), line_width = 0.7mm))]
+mean_line = [layer(x = step_vec, y = overall_mean_matrix[:,2], Geom.line, Gadfly.Theme(default_color=color("blue"), line_width = 0.8mm))]
 
+#append!(actuals_line,lines)
+append!(actuals_line,mean_line)
+append!(actuals_line, two_plus_std_line)
+append!(actuals_line,two_minus_std_line)
+append!(actuals_line,lines)
+
+#all plots
+Gadfly.plot(actuals_line...,Coord.Cartesian(ymin=-0.1,ymax=700), Guide.XLabel("Day"),Guide.YLabel("Population"), Guide.Title("Plot of infected individuals overtime"), Guide.manual_color_key("Legend", ["particle paths","Actual data", "Mean data", "2+ std", "2- std"], ["deepskyblue", "red", "blue", "black", "green"]))
+
+# only paths of particles
+Gadfly.plot(lines..., Guide.XLabel("Day"),Guide.YLabel("Population"),Guide.Title("Plot of infected individuals overtime"), Guide.manual_color_key("Legend", ["particle paths"], ["deepskyblue"]))
+
+
+## Histograms
+#variation for each param, at all time steps
+col = Colors.distinguishable_colors(15)
+
+sus_variation = [layer(x= foo[1,:,i], Geom.histogram(bincount = 10), Gadfly.Theme(default_color=col[i])) for i in range(1,stop=15)]
+inf_variation = [layer(x= foo[2,:,i], Geom.histogram(bincount = 10), Gadfly.Theme(default_color=col[i])) for i in range(1,stop=15)]
+rec_variation = [layer(x= foo[3,:,i], Geom.histogram(bincount = 10), Gadfly.Theme(default_color=col[i])) for i in range(1,stop=15)]
+beta_variation = [layer(x= foo[4,:,i], Geom.histogram(bincount = 10), Gadfly.Theme(default_color=col[i])) for i in range(1,stop=15)]
+gamma_variation = [layer(x= foo[5,:,i], Geom.histogram(bincount = 10), Gadfly.Theme(default_color=col[i])) for i in range(1,stop=15)]
+
+p1 = Gadfly.plot(sus_variation..., Guide.Title("Susceptible"))
+p2 = Gadfly.plot(inf_variation..., Guide.Title("Infected"))
+p3 = Gadfly.plot(rec_variation...,Guide.Title("Recovered"))
+p4 = Gadfly.plot(beta_variation..., Guide.Title("Beta"))
+p5 = Gadfly.plot(gamma_variation..., Guide.Title("Gamma"))
+
+gridstack(Union{Plot,Compose.Context}[p1 p2 p3; p4 p5 Compose.context()])
+
+
+
+vstack(hstack(p1,p2), p3)
+vstack(p1,p2)
+vstack(p4,p5)
+#hstack(p1, p2, p3)
+#gridstack([p4 ; p5])
+
+
+
+#p1 = Gadfly.plot(x = foo[4,:,1], Geom.histogram(bincount = 10), Gadfly.Theme(default_color=color("black")))
+
+
+
+
+
+##
 # -------------------------------------
 # Particle Marginal Metropolis Hastings
 # -------------------------------------

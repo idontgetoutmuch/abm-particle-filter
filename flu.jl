@@ -132,7 +132,7 @@ actuals = [1, 3, 8, 28, 76, 222, 293, 257, 237, 192, 126, 70, 28, 12, 5]
 
 Plots.plot(model_df.step, model_df.total_infected, labels = "1.7,0.5", legend = :bottom)
 Plots.plot!(model_df.step, actuals, labels = "actuals", legend = :bottom)
-Plots.plot(model_df.step, model_df_2.total_infected, labels = "2,0.5", legend = :bottom)
+Plots.plot!(model_df.step, model_df_2.total_infected, labels = "2,0.5", legend = :bottom)
 # Plots.plot!(model_df[34:44,:].step, model_df[23:33,:].total_infected, labels = "S = 125", legend = :top)
 # #actual version
 # Plots.plot!(model_df.step[12:22,:], model_df.total_infected[12:22,:], title = "Model with diff seeds", labels = "S = 456", legend = :top, xlabel = "Day", ylabel = "Number of cases")
