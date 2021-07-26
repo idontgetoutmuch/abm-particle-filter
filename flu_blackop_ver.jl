@@ -244,7 +244,7 @@ x0 = [
 actuals = [3, 8, 28, 76, 222, 293, 257, 237, 192, 126, 70, 28, 12, 5]
 
 
-cost(x0)
+#cost(x0)
 
 #part cost of actuals vs simulation values
 partCost(actuals)(x0)
@@ -414,4 +414,3 @@ function pf(inits, N, f, h, y, Q, R, nx, ny)
     return(x_pf, log_w, log_W)
 
 end
-

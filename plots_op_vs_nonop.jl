@@ -242,8 +242,7 @@ x0 = [
 ]
 
 #actual values
-actuals = [3, 8, 28, 76, 222, 293, 257, 237, 192, 126, 70, 28, 12, 5]
-
+actuals = [1, 3, 8, 28, 76, 222, 293, 257, 237, 192, 126, 70, 28, 12, 5]
 
 #cost(x0)
 
@@ -301,12 +300,12 @@ adata = [:status]
 mdata = [total_infected, total_recovered, total_sus]
 
 #_, model_df_1 = run!(model_non_op,dummystep,model_step!,10; adata, mdata)
-_, model_df_2 = run!(model_op,dummystep,model_step!,10; adata, mdata);
+_, model_df_2 = run!(model_op,dummystep,model_step!,14; adata, mdata);
 
 #plot the one with optimal params by eye
 model_1 = model_initialize(beta = 2.1, gamma = 0.85, seed = 50)
 
-_, model_df_1 = run!(model_1,dummystep,model_step!,10; adata, mdata)
+_, model_df_1 = run!(model_1,dummystep,model_step!,14; adata, mdata)
 
 ##new plots
 
@@ -314,8 +313,8 @@ _, model_df_1 = run!(model_1,dummystep,model_step!,10; adata, mdata)
 #Plots.plot!(model_df_2.step, actuals[1:11], title = "Total population infected", labels = "Actual version", legend = :left, xlabel = "Day", ylabel = "Number of cases")
 
 Gadfly.plot(layer(x = model_df_2.step, y = model_df_2.total_infected, Geom.line, Gadfly.Theme(default_color=color("red"))),
-            layer(x = model_df_2.step, y = actuals[1:11], Geom.line, Gadfly.Theme(default_color=color("blue"))),
-            layer(x = model_df_1.step, y = model_df_1.total_infected, Geom.line, Gadfly.Theme(default_color=color("green"))),
+            layer(x = model_df_2.step, y = actuals, Geom.line, Gadfly.Theme(default_color=color("blue"))),
+            layer(x = model_df_2.step, y = model_df_1.total_infected, Geom.line, Gadfly.Theme(default_color=color("green"))),
             Guide.XLabel("Day"),
             Guide.YLabel("Population"),
             Guide.Title("Actual flu cases against different simulation versions"),
