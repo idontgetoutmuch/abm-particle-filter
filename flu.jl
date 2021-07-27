@@ -6,11 +6,47 @@ using Random
 using InteractiveDynamics
 using CairoMakie
 
-
+using DifferentialEquations
+using SimpleDiffEq
+using StatsPlots
 
 
 #how many students
 #num_students = 763
+
+function sir_ode!(du,u,p,t)
+    (S, I, R) = u
+    (β, γ)    = p
+    N = S + I + R
+    @inbounds begin
+        du[1] = -β * I / N * S
+        du[2] =  β * I / N * S - γ * I
+        du[3] =                  γ * I
+    end
+    nothing
+end;
+
+δt = 0.1
+tmax = 15.0
+tspan = (0.0, tmax)
+t = 1.0 : δt : tmax;
+
+u0 = [762.0, 1.0, 0.0]; # S, I, R
+p = [2.0, 0.5]; # β, γ
+
+prob_ode = ODEProblem(sir_ode!, u0, tspan, p);
+sol_ode = solve(prob_ode);
+
+df_ode = DataFrame(Tables.table(sol_ode(t)'))
+df_ode[!,:t] = t;
+
+p1 = [1.7, 0.5]; # β, γ
+
+prob_ode1 = ODEProblem(sir_ode!, u0, tspan, p1);
+sol_ode1 = solve(prob_ode1);
+
+df_ode1 = DataFrame(Tables.table(sol_ode1(t)'))
+df_ode1[!,:t] = t;
 
 #Agent type
 mutable struct Student <: AbstractAgent
@@ -195,7 +231,7 @@ parameters = Dict(:beta => beta_vec,) #:gamma => [0.5,0.6],)
 #parameters_1 = Dict(:seed => [500,456,567,125])
 #
 
-rng = Random.MersenneTwister(seed)
+rng = Random.MersenneTwister(42)
 
 model_1 = model_initialize1(beta = 2, gamma = 0.5, seed = 42)
 
@@ -223,6 +259,8 @@ for i in 3:51
     Plots.plot!(df_50.x1, df_50[!, i], color = "blue");
 end
 Plots.plot!(df_50.x1, df_50[!, 52], color = "blue")
+Plots.plot!(df_ode.t, df_ode.Column2, color = "green")
+Plots.plot!(df_ode1.t, df_ode1.Column2, color = "purple")
 
  _, model_df = paramscan(parameters, model_initialize; adata, mdata, model_step!, n = 14)
 
