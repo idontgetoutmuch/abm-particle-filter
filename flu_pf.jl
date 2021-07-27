@@ -12,6 +12,7 @@ using LinearAlgebra
 using ColorBrewer
 using Compose
 using Gtk
+using StatsPlots
 
 #how many students
 num_students = 763
@@ -415,11 +416,95 @@ beta_variation = [Gadfly.plot(x= end_states[4,:,i], Geom.histogram(bincount = 10
 gamma_variation = [Gadfly.plot(x= end_states[5,:,i], Geom.histogram(bincount = 10),Guide.XLabel("Gamma"),Coord.Cartesian(xmin=0.3,xmax=1), Gadfly.Theme(default_color=col[10])) for i in range(1,stop=15)]
 
 
+gamma_v = [layer(x= end_states[5,:,i], Geom.violin,Gadfly.Theme(default_color=col[10])) for i in range(1,stop=15)]
+
+#Gadfly.plot(y=end_states[5,:,1], Geom.violin)
 # p12 = Gadfly.plot(beta_variation[1])
+
+Gadfly.plot(gamma_v...)
+
+
+#Gadfly.plot(x=step_vec, y=end_states[5,:,i], Geom.violin)
+
+
+# gamma_v1 = [layer(x= step_vec, y = end_states[5,:,i], Geom.violin,Gadfly.Theme(default_color=col[10])) for i in range(1,stop=15)]
 #
+# step_vec_1 = [1];
+# step_vec_2 = [2];
+
+
+# Gadfly.plot(#layer(x = step_vec_1 , y = end_states[5,:,1], Geom.violin),
+#             layer(x = step_vec_2, y = end_states[5,:,2], Geom.violin))
+#
+# StatsPlots.violin!(y= end_states[5,:,1])
+#
+
+
+group = vcat(fill("1", 10000),fill("2", 10000),fill("3", 10000),fill("4", 10000),fill("5", 10000),fill("6", 10000), fill("7", 10000),fill("8", 10000),fill("9", 10000), fill("10", 10000),
+            fill("11", 10000), fill("12", 10000),
+            fill("13", 10000), fill("14", 10000),
+            fill("15", 10000))
+
+
+group_1 = vcat(fill("1", 10000))
+
+group_2 = vcat(fill("2", 10000),fill("3", 10000),fill("4", 10000),fill("5", 10000),fill("6", 10000), fill("7", 10000),fill("8", 10000),fill("9", 10000), fill("10", 10000),
+            fill("11", 10000), fill("12", 10000),
+            fill("13", 10000), fill("14", 10000),
+            fill("15", 10000))
+
+#beta
+data_beta_1 = vcat(end_states[4,:,1])
+
+data_beta_2 = vcat(end_states[4,:,2],end_states[4,:,3],
+                    end_states[4,:,4],end_states[4,:,5],end_states[4,:,6],
+                    end_states[4,:,7],end_states[4,:,8],end_states[4,:,9],
+                    end_states[4,:,10],end_states[4,:,11], end_states[4,:,12],
+                    end_states[4,:,13], end_states[4,:,14],end_states[4,:,15])
+
+
+
+
+data_gamma_1 = vcat(end_states[5,:,1])
+
+data_gamma_2 = vcat(end_states[5,:,2],end_states[5,:,3],end_states[5,:,4],end_states[5,:,5],end_states[5,:,6],end_states[5,:,7], end_states[5,:,8],end_states[5,:,9], end_states[5,:,10],
+            end_states[5,:,11], end_states[5,:,12],
+            end_states[5,:,13], end_states[5,:,14],
+            end_states[5,:,15])
+
+
+
+df_gamma_1 = DataFrame(data=data_gamma_1, group=group_1)
+df_gamma_2 = DataFrame(data=data_gamma_2, group=group_2)
+df_beta_1 = DataFrame(data=data_beta_1, group=group_1)
+df_beta_2 = DataFrame(data=data_beta_2, group=group_2)
+
+g1 = Gadfly.plot(df_gamma_1, x=:group, y=:data, Geom.violin,Guide.XLabel("Time step"), Guide.YLabel("Gamma"))
+g2 = Gadfly.plot(df_gamma_2, x=:group, y=:data, Geom.violin,Guide.XLabel("Time step"), Guide.YLabel("Gamma"))
+b1 = Gadfly.plot(df_beta_1, x=:group, y=:data, Geom.violin,Guide.XLabel("Time step"), Guide.YLabel("Beta"))
+b2 = Gadfly.plot(df_beta_2, x=:group, y=:data, Geom.violin,Guide.XLabel("Time step"), Guide.YLabel("Beta"))
+
+
+Gadfly.title(hstack(g1,g2), "Variation in Gamma")
+Gadfly.title(hstack(b1,b2), "Variation in Beta")
+
+
+
+
+
 # gridstack([])
 #
+
+# for i in 2:15
+#     initial = end_states[5,:,1]
+#     new = end_states[5,:,i]
 #
+#
+# end
+#
+#
+#
+# d = (vcat(end_states[5,:,i]) for i in range(1,stop=15)
 # gridstack(reshape([[render(sus_variation[i]) for i in 1:15], Gtk.canvas()],3,5))
 
 ##actual plots
@@ -500,109 +585,109 @@ Gadfly.title(vstack(hstack(gamma_variation[13], gamma_variation[14], gamma_varia
 
 ##Plot layout options
 
-Gadfly.title(vstack(hstack( sus_variation_1_4[1], sus_variation_1_4[2], sus_variation_1_4[3]),
-                    hstack(sus_variation_1_4[4], sus_variation_5_6[5], sus_variation_5_6[6]))
-                    ,"Variation in susceptible (time steps 1-6)")
-#susceptible
-Gadfly.title(vstack(hstack(sus_variation[1], sus_variation[2], sus_variation[3]),
-                    hstack(sus_variation[4], sus_variation[5], sus_variation[6]))
-                    ,"Variation in susceptible (time steps 1-6)")
-
-Gadfly.title(vstack(hstack(sus_variation[7], sus_variation[8], sus_variation[9]),
-                    hstack(sus_variation[10], sus_variation[11], sus_variation[12]))
-                    ,"Variation in susceptible (time steps 7-12)")
-
-Gadfly.title(vstack(hstack(sus_variation[13], sus_variation[14], sus_variation[15]),
-                    hstack())
-                    ,"Variation in susceptible (time steps 13-15)")
-
-
-
-
-
-
-#3x5
-gridstack([sus_variation[1] sus_variation[2] sus_variation[3];
-           sus_variation[4] sus_variation[5] sus_variation[6];
-           sus_variation[7] sus_variation[8] sus_variation[9];
-           sus_variation[10] sus_variation[11] sus_variation[12];
-           sus_variation[13] sus_variation[14] sus_variation[15];])
-#4x4
-gridstack(Union{Plot,Compose.Context}[sus_variation[1] sus_variation[2] sus_variation[3] sus_variation[4];
-           sus_variation[5] sus_variation[6] sus_variation[7] sus_variation[8];
-           sus_variation[9] sus_variation[10] sus_variation[11] sus_variation[12];
-           sus_variation[13] sus_variation[14] sus_variation[15] Compose.context();])
-
-#2x4x2
-Gadfly.title(vstack(hstack(sus_variation[1], sus_variation[2], sus_variation[3], sus_variation[4]),
-                    hstack(sus_variation[5], sus_variation[6], sus_variation[7], sus_variation[8]))
-                    ,"Variation in susceptible (time steps 1-8)")
-
-Gadfly.title(vstack(hstack(sus_variation[9], sus_variation[10], sus_variation[11], sus_variation[12]),
-                    hstack(sus_variation[13], sus_variation[14], sus_variation[15]))
-                    ,"Variation in susceptible (time steps 9-15)")
-
-
-
-## Plots for other params
-# Infected
-Gadfly.title(vstack(hstack(inf_variation[1], inf_variation[2], inf_variation[3], inf_variation[4]),
-                    hstack(inf_variation[5], inf_variation[6], inf_variation[7], inf_variation[8]))
-                    ,"Variation in infected(time steps 1-8)")
-
-Gadfly.title(vstack(hstack(inf_variation[9], inf_variation[10], inf_variation[11], inf_variation[12]),
-                    hstack(inf_variation[13], inf_variation[14], inf_variation[15]))
-                    ,"Variation in infected (time steps 9-15)")
-
-# Recovered
-Gadfly.title(vstack(hstack(rec_variation[1], rec_variation[2], rec_variation[3], rec_variation[4]),
-                    hstack(rec_variation[5], rec_variation[6], rec_variation[7], rec_variation[8]))
-                    ,"Variation in recovered (time steps 1-8)")
-
-Gadfly.title(vstack(hstack(rec_variation[9], rec_variation[10], rec_variation[11], rec_variation[12]),
-                    hstack(rec_variation[13], rec_variation[14], rec_variation[15]))
-                    ,"Variation in recovered (time steps 9-15)")
-
-
-# Beta
-Gadfly.title(vstack(hstack(beta_variation[1], beta_variation[2], beta_variation[3], beta_variation[4]),
-                    hstack(beta_variation[5], beta_variation[6], beta_variation[7], beta_variation[8]))
-                    ,"Variation in Beta (time steps 1-8)")
-
-Gadfly.title(vstack(hstack(beta_variation[9], beta_variation[10], beta_variation[11], beta_variation[12]),
-                    hstack(beta_variation[13], beta_variation[14], beta_variation[15]))
-                    ,"Variation in Beta (time steps 9-15)")
-
-
-# Gamma
-Gadfly.title(vstack(hstack(gamma_variation[1], gamma_variation[2], gamma_variation[3], gamma_variation[4]),
-                    hstack(gamma_variation[5], gamma_variation[6], gamma_variation[7], gamma_variation[8]))
-                    ,"Variation in Gamma (time steps 1-8)")
-
-Gadfly.title(vstack(hstack(gamma_variation[9], gamma_variation[10], gamma_variation[11], gamma_variation[12]),
-                    hstack(gamma_variation[13], gamma_variation[14], gamma_variation[15]))
-                    ,"Variation in Gamma (time steps 9-15)")
-
-
-
-
-
-
-# vstack(hstack(p1,p2), p3)
-# vstack(p1,p2)
-# vstack(p4,p5)
-# #hstack(p1, p2, p3)
-# #gridstack([p4 ; p5])
-
-
-
-
-
-
-#p1 = Gadfly.plot(x = end_states[4,:,1], Geom.histogram(bincount = 10), Gadfly.Theme(default_color=color("black")))
-
-
-
+# Gadfly.title(vstack(hstack( sus_variation_1_4[1], sus_variation_1_4[2], sus_variation_1_4[3]),
+#                     hstack(sus_variation_1_4[4], sus_variation_5_6[5], sus_variation_5_6[6]))
+#                     ,"Variation in susceptible (time steps 1-6)")
+# #susceptible
+# Gadfly.title(vstack(hstack(sus_variation[1], sus_variation[2], sus_variation[3]),
+#                     hstack(sus_variation[4], sus_variation[5], sus_variation[6]))
+#                     ,"Variation in susceptible (time steps 1-6)")
+#
+# Gadfly.title(vstack(hstack(sus_variation[7], sus_variation[8], sus_variation[9]),
+#                     hstack(sus_variation[10], sus_variation[11], sus_variation[12]))
+#                     ,"Variation in susceptible (time steps 7-12)")
+#
+# Gadfly.title(vstack(hstack(sus_variation[13], sus_variation[14], sus_variation[15]),
+#                     hstack())
+#                     ,"Variation in susceptible (time steps 13-15)")
+#
+#
+#
+#
+#
+#
+# #3x5
+# gridstack([sus_variation[1] sus_variation[2] sus_variation[3];
+#            sus_variation[4] sus_variation[5] sus_variation[6];
+#            sus_variation[7] sus_variation[8] sus_variation[9];
+#            sus_variation[10] sus_variation[11] sus_variation[12];
+#            sus_variation[13] sus_variation[14] sus_variation[15];])
+# #4x4
+# gridstack(Union{Plot,Compose.Context}[sus_variation[1] sus_variation[2] sus_variation[3] sus_variation[4];
+#            sus_variation[5] sus_variation[6] sus_variation[7] sus_variation[8];
+#            sus_variation[9] sus_variation[10] sus_variation[11] sus_variation[12];
+#            sus_variation[13] sus_variation[14] sus_variation[15] Compose.context();])
+#
+# #2x4x2
+# Gadfly.title(vstack(hstack(sus_variation[1], sus_variation[2], sus_variation[3], sus_variation[4]),
+#                     hstack(sus_variation[5], sus_variation[6], sus_variation[7], sus_variation[8]))
+#                     ,"Variation in susceptible (time steps 1-8)")
+#
+# Gadfly.title(vstack(hstack(sus_variation[9], sus_variation[10], sus_variation[11], sus_variation[12]),
+#                     hstack(sus_variation[13], sus_variation[14], sus_variation[15]))
+#                     ,"Variation in susceptible (time steps 9-15)")
+#
+#
+#
+# ## Plots for other params
+# # Infected
+# Gadfly.title(vstack(hstack(inf_variation[1], inf_variation[2], inf_variation[3], inf_variation[4]),
+#                     hstack(inf_variation[5], inf_variation[6], inf_variation[7], inf_variation[8]))
+#                     ,"Variation in infected(time steps 1-8)")
+#
+# Gadfly.title(vstack(hstack(inf_variation[9], inf_variation[10], inf_variation[11], inf_variation[12]),
+#                     hstack(inf_variation[13], inf_variation[14], inf_variation[15]))
+#                     ,"Variation in infected (time steps 9-15)")
+#
+# # Recovered
+# Gadfly.title(vstack(hstack(rec_variation[1], rec_variation[2], rec_variation[3], rec_variation[4]),
+#                     hstack(rec_variation[5], rec_variation[6], rec_variation[7], rec_variation[8]))
+#                     ,"Variation in recovered (time steps 1-8)")
+#
+# Gadfly.title(vstack(hstack(rec_variation[9], rec_variation[10], rec_variation[11], rec_variation[12]),
+#                     hstack(rec_variation[13], rec_variation[14], rec_variation[15]))
+#                     ,"Variation in recovered (time steps 9-15)")
+#
+#
+# # Beta
+# Gadfly.title(vstack(hstack(beta_variation[1], beta_variation[2], beta_variation[3], beta_variation[4]),
+#                     hstack(beta_variation[5], beta_variation[6], beta_variation[7], beta_variation[8]))
+#                     ,"Variation in Beta (time steps 1-8)")
+#
+# Gadfly.title(vstack(hstack(beta_variation[9], beta_variation[10], beta_variation[11], beta_variation[12]),
+#                     hstack(beta_variation[13], beta_variation[14], beta_variation[15]))
+#                     ,"Variation in Beta (time steps 9-15)")
+#
+#
+# # Gamma
+# Gadfly.title(vstack(hstack(gamma_variation[1], gamma_variation[2], gamma_variation[3], gamma_variation[4]),
+#                     hstack(gamma_variation[5], gamma_variation[6], gamma_variation[7], gamma_variation[8]))
+#                     ,"Variation in Gamma (time steps 1-8)")
+#
+# Gadfly.title(vstack(hstack(gamma_variation[9], gamma_variation[10], gamma_variation[11], gamma_variation[12]),
+#                     hstack(gamma_variation[13], gamma_variation[14], gamma_variation[15]))
+#                     ,"Variation in Gamma (time steps 9-15)")
+#
+#
+#
+#
+#
+#
+# # vstack(hstack(p1,p2), p3)
+# # vstack(p1,p2)
+# # vstack(p4,p5)
+# # #hstack(p1, p2, p3)
+# # #gridstack([p4 ; p5])
+#
+#
+#
+#
+#
+#
+# #p1 = Gadfly.plot(x = end_states[4,:,1], Geom.histogram(bincount = 10), Gadfly.Theme(default_color=color("black")))
+#
+#
+#
 
 
 ##

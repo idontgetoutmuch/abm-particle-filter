@@ -18,7 +18,7 @@ mutable struct Student <: AbstractAgent
     status::Symbol  # 1: S, 2: I, 3:R
 end
 
-function model_initialize(; num_students = 763, beta = 2, gamma = 0.5, seed = 125)
+function model_initialize(; num_students = 763, beta = 2, gamma = 0.5, seed = 500)
     rng = Random.MersenneTwister(seed)
     # create properties for gamma and beta which can then be changed later
     # seed passed in as a property due to errors
@@ -107,32 +107,56 @@ end
 #model = model_initialize()
 #
 # # #models with different seeds
-model_1 = model_initialize(beta = 2, gamma = 0.5, seed = 400)
-#model_2 = model_initialize(beta = 2, gamma = 0.5, seed = 400)
-# model_3 = model_initialize(seed = 500)
+# model_1 = model_initialize(beta = 2, gamma = 0.5, seed = 400)
+# #model_2 = model_initialize(beta = 2, gamma = 0.5, seed = 400)
+# # model_3 = model_initialize(seed = 500)
+# #
+# #
+# adata = [:status]
 #
-#
-adata = [:status]
-
-mdata = [total_infected, total_recovered, total_sus]
-#
-_, model_df = run!(model_1,dummystep,model_step!,14; adata, mdata)
- _, model_df_2 = run!(model_2,dummystep,model_step!,14; adata, mdata)
+# mdata = [total_infected, total_recovered, total_sus]
+# #
+# _, model_df = run!(model_1,dummystep,model_step!,14; adata, mdata)
+ #_, model_df_2 = run!(model_2,dummystep,model_step!,14; adata, mdata)
 # _, model_df_3 = run!(model_3,dummystep,model_step!,10; adata, mdata)
 
+#beta_vec = [2, 2, 2, 2, 2,]
 
-  #parameters = Dict(:beta => collect(2:3), :gamma => [0.5,0.6],)
 
+parameters = Dict(:beta => beta_vec,) #:gamma => [0.5,0.6],)
+
+beta_vec = zeros(50)
+gamma_vec = zeros(50)
+for i in 1:50
+    beta_vec[i] = 2
+    gamma_vec[i] = 0.5
+end
+parameters = Dict(:beta => beta_vec,) #:gamma => [0.5,0.6],)
 #parameters_1 = Dict(:seed => [500,456,567,125])
 #
- #_, model_df = paramscan(parameters_1, model_initialize; adata, mdata, model_step!, n = 10)
+ _, model_df = paramscan(parameters, model_initialize; adata, mdata, model_step!, n = 14)
 
 ## plots
 actuals = [1, 3, 8, 28, 76, 222, 293, 257, 237, 192, 126, 70, 28, 12, 5]
 
 #Plots.plot(model_df.step, model_df.total_infected, labels = "1.7,0.5", legend = :bottom)
-Plots.plot (model_df.step, actuals, labels = "Actual ", legend = :bottom)
-Plots.plot!(model_df.step, model_df_2.total_infected, labels = "2,0.5", legend = :bottom)
+# Plots.plot(model_df.step, actuals, labels = "Actual data", legend = :bottom)
+# Plots.plot!(model_df.step, model_df.total_infected, labels = "", legend = :bottom)
+
+
+## 50 plots
+Plots.plot(model_df.step[1:15], actuals, labels = "Actual data", legend = legend = :outertopleft)
+Plots.plot!(model_df.step[1:15], model_df.total_infected[1:15], labels = "", legend = legend = :outertopleft)
+# Plots.plot!
+
+starting = 16
+ending = 30
+for i in 2:49
+    Plots.plot!(model_df.step[1:15], model_df.total_infected[starting:ending], legend = :outertopleft)
+    starting = starting + 15
+    ending = ending + 15
+end
+
 # Plots.plot!(model_df[34:44,:].step, model_df[23:33,:].total_infected, labels = "S = 125", legend = :top)
 # #actual version
 # Plots.plot!(model_df.step[12:22,:], model_df.total_infected[12:22,:], title = "Model with diff seeds", labels = "S = 456", legend = :top, xlabel = "Day", ylabel = "Number of cases")
