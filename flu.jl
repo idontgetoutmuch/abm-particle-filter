@@ -38,6 +38,66 @@ function model_initialize(; num_students = 763, beta = 2, gamma = 0.5, seed = 50
     return model
 end
 
+function model_initialize1(; num_students = 763, beta = 2, gamma = 0.5, seed = 42)
+    rng = Random.MersenneTwister(seed)
+
+    properties = Dict(:beta => beta, :gamma => gamma, :rng => rng)
+    model = ABM(Student; properties)
+
+    for i in 1:num_students
+        add_agent!(model, :S)
+    end
+
+    agent = model[1]
+    agent.status = :I
+
+    return model
+end
+
+function model_step1!(model)
+    transmit_and_recover1!(model)
+end
+
+function transmit_and_recover1!(model)
+    rng = model.rng
+
+    total_inf = total_infected(model)
+    total_rec = total_recovered(model)
+    total_suspec = total_sus(model)
+
+    beta_param = model.beta
+    index = 0
+
+    new_infected = rand(rng,Poisson(total_suspec * total_inf * beta_param / 763))
+
+    for a in allagents(model)
+        if (index < new_infected)
+            if a.status == :S
+                a.status = :I
+                index += 1
+            end
+        end
+    end
+
+    Y = model.gamma
+    counter = 0
+
+    new_recover = rand(rng, Poisson(total_inf*Y))
+
+    cur_infected = total_infected(model)
+
+    valid_recover = min(new_recover,cur_infected)
+
+    for a in allagents(model)
+        if (counter < valid_recover)
+            if a.status == :I
+                a.status = :R
+                counter += 1
+            end
+        end
+    end
+
+end
 
 
 ##the model step function
@@ -134,10 +194,41 @@ end
 parameters = Dict(:beta => beta_vec,) #:gamma => [0.5,0.6],)
 #parameters_1 = Dict(:seed => [500,456,567,125])
 #
+
+rng = Random.MersenneTwister(seed)
+
+model_1 = model_initialize1(beta = 2, gamma = 0.5, seed = 42)
+
+adata = [:status]
+
+mdata = [total_infected, total_recovered, total_sus]
+
+model_1 = model_initialize1(beta = 2, gamma = 0.5, seed = 42);
+_, model_50_df = run!(model_1,dummystep,model_step1!,14; adata, mdata);
+m_50 = model_50_df[:,2];
+
+for i in 2:50
+    model_1 = model_initialize1(beta = 2, gamma = 0.5, seed = 42)
+    _, model_df1 = run!(model_1,dummystep,model_step1!,14; adata, mdata);
+    m_1 = model_df1[:,2];
+    m_50 = [m_50 m_1]
+end
+
+actuals = [1, 3, 8, 28, 76, 222, 293, 257, 237, 192, 126, 70, 28, 12, 5]
+m_50 = [1:15' actuals m_50];
+df_50 = DataFrame(m_50, :auto);
+
+Plots.scatter(df_50.x1, df_50[!, 2], legend = false, color = "red")
+for i in 3:51
+    Plots.plot!(df_50.x1, df_50[!, i], color = "blue");
+end
+Plots.plot!(df_50.x1, df_50[!, 52], color = "blue")
+
  _, model_df = paramscan(parameters, model_initialize; adata, mdata, model_step!, n = 14)
 
+_, model_df1 = paramscan(parameters, model_initialize1; adata, mdata, model_step1!, n = 14)
+
 ## plots
-actuals = [1, 3, 8, 28, 76, 222, 293, 257, 237, 192, 126, 70, 28, 12, 5]
 
 #Plots.plot(model_df.step, model_df.total_infected, labels = "1.7,0.5", legend = :bottom)
 # Plots.plot(model_df.step, actuals, labels = "Actual data", legend = :bottom)
