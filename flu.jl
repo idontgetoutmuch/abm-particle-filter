@@ -272,17 +272,17 @@ end
 #beta_vec = [2, 2, 2, 2, 2,]
 
 
-parameters = Dict(:beta => beta_vec,) #:gamma => [0.5,0.6],)
-
-beta_vec = zeros(50)
-gamma_vec = zeros(50)
-for i in 1:50
-    beta_vec[i] = 2
-    gamma_vec[i] = 0.5
-end
-parameters = Dict(:beta => beta_vec,) #:gamma => [0.5,0.6],)
-#parameters_1 = Dict(:seed => [500,456,567,125])
+# parameters = Dict(:beta => beta_vec,) #:gamma => [0.5,0.6],)
 #
+# beta_vec = zeros(50)
+# gamma_vec = zeros(50)
+# for i in 1:50
+#     beta_vec[i] = 2
+#     gamma_vec[i] = 0.5
+# end
+# parameters = Dict(:beta => beta_vec,) #:gamma => [0.5,0.6],)
+# #parameters_1 = Dict(:seed => [500,456,567,125])
+# #
 
 rng = Random.MersenneTwister(42)
 

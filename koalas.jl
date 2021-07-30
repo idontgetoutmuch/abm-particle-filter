@@ -17,13 +17,13 @@ Koala(id, pos, energy, repr, Δe) = HumansOrKoalas(id, pos, :koala, energy, repr
 
 
 function initialize_model(;
-    n_koala = 7,
+    n_koala = 50,
     n_human = 100,
     dims = (20, 20),
-    regrowth_time = 30,
+    regrowth_time = 20,
     Δenergy_koala = 10,
-    Δenergy_human = 10,
-    koala_reproduce = 0.07,
+    Δenergy_human = 50,
+    koala_reproduce = 0.1,
     human_reproduce = 0.05,
     seed = 23182,
 )
