@@ -104,57 +104,6 @@ function transmit_and_recover!(model)
 
 end
 
-## data collection and run model
-
-#create the model
-# model = model_initialize()
-#
-# # #models with different seeds
-# model_1 = model_initialize(seed = 125)
-# model_2 = model_initialize(seed = 10)
-# model_3 = model_initialize(seed = 500)
-#
-#
-# adata = [:status]
-#
-# mdata = [total_infected, total_recovered, total_sus]
-#
-# _, model_df_1 = run!(model_1,dummystep,model_step!,10; adata, mdata)
-# _, model_df_2 = run!(model_2,dummystep,model_step!,10; adata, mdata)
-# _, model_df_3 = run!(model_3,dummystep,model_step!,10; adata, mdata)
-
-
-  #parameters = Dict(:beta => collect(2:3), :gamma => [0.5,0.6],)
-
-# parameters = Dict(:seed => [10,500])
-# # #
-#   _, model_df = paramscan(parameters, model_initialize; adata, mdata, model_step!, n = 10)
-
-##plotting function
-
-
-
-# function plot_population_timeseries_altering(model_df, min,max)
-#     figure = Figure(resolution = (600, 400))
-#     ax = figure[1, 1] = Axis(figure; xlabel = "Step", ylabel = "Number infected")
-#
-#     infectedl = lines!(ax, model_df.step, model_df.total_infected, color = :blue)
-#     recoveredl = lines!(ax, model_df.step, model_df.total_recovered, color = :orange)
-#     susceptiblel = lines!(ax, model_df.step, model_df.total_sus, color = :green)
-#
-#     figure[1, 2] = Legend(figure, [infectedl, recoveredl, susceptiblel], ["Infected", "Recovered", "Susceptible"])
-#     figure
-# end
-#
-# function determine_lines(model_df)
-#     figure = Figure(resolution = (600, 400))
-#     ax = figure[1, 1] = Axis(figure; xlabel = "Step", ylabel = "Number infected")
-#     infectedl = lines!(ax, model_df.step, model_df.total_infected, color = :blue)
-#     recoveredl = lines!(ax, model_df.step, model_df.total_recovered, color = :orange)
-#     susceptiblel = lines!(ax, model_df.step, model_df.total_sus, color = :green)
-#
-#     return infectedl, recoveredl, susceptiblel
-# end
 
 function plot_timeseries()
     figure = Figure(resolution = (600, 400))
