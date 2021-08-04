@@ -1,5 +1,5 @@
 using Agents, Random, DataFrames, LightGraphs
-using Distributions: Poisson, DiscreteNonParametric
+using Distributions
 using DrWatson: @dict
 using Plots
 using Random
@@ -306,11 +306,11 @@ end
 
 ##
 
-function n(model,step)
-end
-
-model_6 = init_model(β, c, γ, N, I0)
-Agents.step!(model_6, agent_step!, dummystep,n(model_6,2))
+# function n(model,step)
+# end
+#
+# model_6 = init_model(β, c, γ, N, I0)
+# Agents.step!(model_6, agent_step!, dummystep,n(model_6,2))
 
 
 ##
@@ -331,34 +331,34 @@ function simulate_one_step(vec)
     #rng = Random.MersenneTwister(seed)
 
     ##values of SIR that were passed in as params
-    oldS  = vec[1]
-    oldI  = vec[2]
-    oldR  = vec[3]
-    beta  = vec[4]
-    c = vec[5]
-    gamma = vec[6]
-
-
-
-
-
-
-
-    ##returns int value of number infected
-    # new_infected = rand(rng, Poisson(oldS * oldI * beta / num_students))
-    # valid_infected = min(new_infected, oldS)
-
-    #determine the number of newly recovered individuals
-    new_recover = rand(rng, Poisson(oldI * gamma))
-    valid_recover = min(new_recover, oldI)
-
-    #determine the new number of susceptible, infected and recovered
-    newS = oldS - valid_infected
-    newI = oldI + valid_infected - valid_recover
-    newR = oldR + valid_recover
-
-    #in a vector format
-    output = [newS newI newR]
+    # oldS  = vec[1]
+    # oldI  = vec[2]
+    # oldR  = vec[3]
+    # beta  = vec[4]
+    # c = vec[5]
+    # gamma = vec[6]
+    #
+    #
+    #
+    #
+    #
+    #
+    #
+    # ##returns int value of number infected
+    # # new_infected = rand(rng, Poisson(oldS * oldI * beta / num_students))
+    # # valid_infected = min(new_infected, oldS)
+    #
+    # #determine the number of newly recovered individuals
+    # new_recover = rand(rng, Poisson(oldI * gamma))
+    # valid_recover = min(new_recover, oldI)
+    #
+    # #determine the new number of susceptible, infected and recovered
+    # newS = oldS - valid_infected
+    # newI = oldI + valid_infected - valid_recover
+    # newR = oldR + valid_recover
+    #
+    # #in a vector format
+    # output = [newS newI newR]
 
     return (output)
 
@@ -380,7 +380,7 @@ Q = [0.01 0.00 0.00; 0.0 0.005 0.0; 0.0 0.0 0.005]; #--> spread is ok, peak is n
 R = Matrix{Float64}(undef,1,1); #don't change
 R[1,1] = 0.1;
 # Number of particles
-N = 10000; #1000;
+N = 50; #10000; #1000;
 # S, I, R beta and gamma
 nx = 6;
 # S and I since S + I + R = 763 always - no boys die
@@ -409,7 +409,7 @@ end
 
 
 
-function pf(inits, N, f, hh, y, Q, R, nx, ny)
+function pf(inits, N, y, Q, R)
     # inits - initial values
 
     # N - number of particles
@@ -440,48 +440,81 @@ function pf(inits, N, f, hh, y, Q, R, nx, ny)
     # be state. ny is the number of actual state variables so that
     # nx - ny is the number of parameters.
 
-    T = length(y)
+    T = length(y) #time vector
     log_w = zeros(T,N);
-    x_pf = zeros(nx,N,T);
-    x_pf[:,:,1] = inits;
+    y_pf = zeros(T,N);
+    y_pf[1,:] = map(x -> x[2], map(modelCounts, inits))
     wn = zeros(N);
 
     for t = 1:T
         if t >= 2
             a = resample_stratified(wn);
             #f is a vector S I R beta gamma - vector of len 5
-            x_pf[1 : ny, :, t] = hcat(map(f, mapslices(z -> [z], x_pf[:, a, t - 1], dims = 1))...)
-            log_x_pf = map(log, x_pf[ny + 1 : nx, a, t - 1])
-            epsilons = rand(MvNormal(zeros(nx - ny), Q), N)
-            new_log_x_pf = log_x_pf .+ epsilons
-            x_pf[ny + 1 : nx, :, t] = map(exp, new_log_x_pf)
+            #x_pf[1 : ny, :, t] = hcat(map(f, mapslices(z -> [z], x_pf[:, a, t - 1], dims = 1))...)
+            #update all the models
+            inits = inits[a]
+            for i in 1:N
+                Agents.step!(inits[i], agent_step!, 10)
+                currS, currI, currR = modelCounts(inits[i])
+                y_pf[t,i] = currI
+            end
+            #log_y_pf = map(log, y_pf[t, a])
+            epsilons = rand(MvNormal(zeros(3), Q), N)
+            for i in 1:N
+                inits[i].properties[:β] = exp(log(inits[i].properties[:β]) + epsilons[1,i])
+                inits[i].properties[:c] = exp(log(inits[i].properties[:c]) + epsilons[2,i])
+                inits[i].properties[:γ] = exp(log(inits[i].properties[:γ]) + epsilons[3,i])
+            end
         end
 
-        log_w[t, :] = logpdf(MvNormal(y[t, :], R), map(observe, mapslices(z -> [z], x_pf[:,:,t], dims=1)))
+        log_w[t, :] = logpdf(MvNormal(y[t,:], R), y_pf[t,:])
 
         # To avoid underflow subtract the maximum before moving from
         # log space
-
         wn = map(x -> exp(x), log_w[t, :] .- maximum(log_w[t, :]));
         wn = wn / sum(wn);
     end
 
     log_W = sum(map(log, map(x -> x / N, sum(map(exp, log_w[1:T, :]), dims=2))));
 
-    return(x_pf, log_w, log_W)
+    return(y_pf, log_w, log_W)
 
 end
 
-# nx = S, I, R and beta gamma
-# add in the c
-inits = zeros(nx, N)
-inits[1, :] .= 762;
-inits[2, :] .= 1;
-inits[3, :] .= 0;
-inits[4, :] .= rand(LogNormal(log(2),0.01),N)
-inits[5, :] .= rand(LogNormal(log(0.75),0.005),N);
-inits[6, :] .= rand(LogNormal(log(0.5),0.005),N);
 
+
+#creates 50 models with some variation in the params
+inits = [init_model(rand(LogNormal(log(β),0.01)), rand(LogNormal(log(c),0.005)), rand(LogNormal(log(γ),0.005)), 763, 1) for n in 1:50]
+
+y = [1, 3, 8, 28, 76, 222, 293, 257, 237, 192, 126, 70, 28, 12, 5]
+
+
+(end_states, bar, baz) = pf(inits, N, map(x -> convert(Float64,x),y), Q, R);
+
+
+
+
+
+#Agents.run!(inits[1], agent_step!, 10)
+#currS, currI, currR = modelCounts(inits[1])
+
+function modelCounts(abm_model)
+    nS = 0.0
+    nI = 0.0
+    nR = 0.0
+    num_students = 763
+    for i in 1:num_students
+        status = get!(abm_model.agents, i, undef).status;
+        if status == :S
+            nS = nS + 1
+        elseif status == :I
+            nI = nI + 1
+        else
+            nR = nR + 1
+        end
+    end
+    return nS, nI, nR
+end
 
 
 #actual values

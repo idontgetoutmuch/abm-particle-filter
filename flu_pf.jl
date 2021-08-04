@@ -160,7 +160,7 @@ end
 # Parameter update covariace aka parameter diffusivity
 #3x3 matrix
 #match beta, c 0.005, gamma, 3x1.75 7.65
-Q = [0.01 0.00 0.00; 0.0 0.005 0.0; 0.0 0.0 0.005]; #--> spread is ok, peak is not
+Q = [0.01 0.00 ; 0.00.005]; #--> spread is ok, peak is not
 #Q = [0.01 0.0; 0.0 0.01]; #--> spread does not change, peak is flattened
 #Q = [0.001 0.0; 0.0 0.001]; #--> spread effected, peak is flattened
 #Q = [0.005 0.0; 0.0 0.05]; #--> does not reflect spread
@@ -229,8 +229,8 @@ function pf(inits, N, f, hh, y, Q, R, nx, ny)
     # be state. ny is the number of actual state variables so that
     # nx - ny is the number of parameters.
 
-    T = length(y)
-    log_w = zeros(T,N);
+    T = length(y) #time vector
+    log_w = zeros(T,N); #
     x_pf = zeros(nx,N,T);
     x_pf[:,:,1] = inits;
     wn = zeros(N);
@@ -262,7 +262,7 @@ function pf(inits, N, f, hh, y, Q, R, nx, ny)
 end
 
 # nx = S, I, R and beta gamma
-# add in the c 
+# add in the c
 inits = zeros(nx, N)
 inits[1, :] .= 762;
 inits[2, :] .= 1;
