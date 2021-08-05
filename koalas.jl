@@ -16,13 +16,14 @@ Human(id, pos, energy, repr, Δe) = HumansOrKoalas(id, pos, :human, energy, repr
 Koala(id, pos, energy, repr, Δe) = HumansOrKoalas(id, pos, :koala, energy, repr, Δe)
 
 
+
 function initialize_model(;
     n_koala = 50,
     n_human = 100,
     dims = (20, 20),
     regrowth_time = 20,
-    Δenergy_koala = 10,
-    Δenergy_human = 50,
+    Δenergy_koala = 50,
+    Δenergy_human = 10,
     koala_reproduce = 0.1,
     human_reproduce = 0.05,
     seed = 23182,
@@ -154,10 +155,10 @@ count_eucalyptus(model) = count(model.fully_grown)
 
 
 model = initialize_model()
-n = 500
+n_steps = 500
 adata = [(koala, count), (human, count)]
 mdata = [count_eucalyptus]
-adf, mdf = run!(model, humanorkoala_step!, eucalyptus_step!, n; adata, mdata)
+adf, mdf = run!(model, humanorkoala_step!, eucalyptus_step!, n_steps; adata, mdata)
 
 function plot_population_timeseries(adf, mdf)
     figure = Figure(resolution = (600, 400))
