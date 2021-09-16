@@ -16,14 +16,16 @@ Koala(id,death_prob,production_rate, consume_rate) = KoalaOrEucalyptus(id, :koal
 Eucalyptus(id,death_prob,production_rate, consume_rate) = KoalaOrEucalyptus(id, :eucalyptus, death_prob, production_rate, consume_rate)
 
 
+
 function initialize_model(;
-    n_koala = 20,
+    n_koala = 5,
     n_eucalyptus = 200,
-    koala_death_rate = 0.01,
-    eucalyptus_production_rate = 1,
-    eucalyptus_consume_rate = 0.01,
+    koala_death_rate = 8e-3,
+    eucalyptus_production_rate = 0.009,
+    eucalyptus_consume_rate = 0.05,
     seed = 23182,
      )
+     #properties = @dict(eucalyptus_production_rate)
      properties = ()
 
      rng = MersenneTwister(seed)
@@ -46,7 +48,13 @@ function initialize_model(;
      return model
  end
 
+leaf(m) = count(a.type == :eucalyptus for a in allagents(m))
+
+
  function agent_step!(agent::KoalaOrEucalyptus,model)
+     # num_euc = leaf(model)
+     # if num_euc < 1
+     #     eucalyptus_step!(agent,model)
      if agent.type == :koala
          koala_step!(agent,model)
     else
@@ -66,16 +74,22 @@ function initialize_model(;
  end
 
 function eucalyptus_step!(eucalyptus,model)
-    if rand() <= eucalyptus.production_rate
-        reproduce!(eucalyptus,model)
+    num_euc = leaf(model)
+    pc = 0.01
+    if rand() <= num_euc*pc #eucalyptus.production_rate#
+        #nextid(model)
+        eucalyptus = Eucalyptus(nextid(model), 0, eucalyptus.production_rate, eucalyptus.consume_rate)
+        add_agent!(eucalyptus, model)
+        #reproduce!(eucalyptus,model)
     end
 end
 
 
  function koala_eat!(koala, model)
-     food = random_agent(model);
+     food = random_agent(model); #has eucalyptus
      if food.type == :eucalyptus
-         if rand() <= food.consume_rate
+         if rand() <= food.consume_rate #change this to function of how much #times by prop of eucalyptus
+             kill_agent!(food,model)
              reproduce!(koala, model)
          end
      end
@@ -98,7 +112,7 @@ end
  eucalyptus(a) = a.type == :eucalyptus
 
  model = initialize_model()
- n_steps = 200
+ n_steps = 1000
  adata = [(koala, count), (eucalyptus, count)]
  adf, _ = run!(model, agent_step!, dummystep, n_steps; adata)
 
@@ -107,7 +121,7 @@ end
      ax = figure[1, 1] = Axis(figure; xlabel = "Step", ylabel = "Population")
      koalal = lines!(ax, adf.step, adf.count_koala, color = :blue)
      eucalyptusl = lines!(ax, adf.step, adf.count_eucalyptus, color = :green)
-     figure[1, 2] = Legend(figure, [koalal, eucalyptusl], ["Koalas", "Eucalyptus"])
+     figure[1, 2] = Legend(figure, [koalal, eucalyptusl], ["Koalas", "E"])
      figure
  end
 
