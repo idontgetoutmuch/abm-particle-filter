@@ -247,111 +247,111 @@ Plots.plot!(abs.(mean_of_50 - 2*std_of_50) , label = "2- std", lw = 2)
 #
 #
 #
-# # ------------------
-# # Particle Filtering
-# # ------------------
-#
-# Qbeta  = 1.0e-6
-# Qc     = 5.0e-7
-# Qgamma = 5.0e-7
-# # Parameter update covariace aka parameter diffusivity
-# Q = [Qbeta 0.00 0.00; 0.0 Qc 0.0; 0.0 0.0 Qgamma];
-#
-#
-# # Observation covariance
-# R = Matrix{Float64}(undef,1,1); #don't change
-# R[1,1] = 0.1;
-# # Number of particles
-# P = 50;
-#
-# function resample_stratified(weights)
-#
-#     N = length(weights)
-#     # make N subdivisions, and chose a random position within each one
-#     positions =  (rand(N) + collect(range(0, N - 1, length = N))) / N
-#
-#     indexes = zeros(Int64, N)
-#     cumulative_sum = cumsum(weights)
-#     i, j = 1, 1
-#     while i <= N
-#         if positions[i] < cumulative_sum[j]
-#             indexes[i] = j
-#             i += 1
-#         else
-#             j += 1
-#         end
-#     end
-#     return indexes
-# end
-#
-# function pf(inits, N, y, Q, R)
-#
-#     T = length(y)
-#     log_w = zeros(T,N);
-#     y_pf = zeros(T,N);
-#     y_pf[1,:] = map(x -> x[2], map(modelCounts, inits))
-#     wn = zeros(N);
-#
-#     for t = 1:T
-#         if t >= 2
-#             a = resample_stratified(wn);
-#             print("a = ", a, "\n")
-#
-#             inits = inits[a]
-#             for i in 1:N
-#                 Agents.step!(inits[i], agent_step!, 10)
-#                 currS, currI, currR = modelCounts(inits[i])
-#                 # print("props = ", inits[i].properties, " currS = ", currS, " currI = ", currI, " currR = ", currR, "\n")
-#                 y_pf[t,i] = currI
-#             end
-#
-#             epsilons = rand(MvNormal(zeros(3), Q), N)
-#             for i in 1:N
-#                 inits[i].properties[:β] = exp(log(inits[i].properties[:β]) + epsilons[1,i])
-#                 inits[i].properties[:c] = exp(log(inits[i].properties[:c]) + epsilons[2,i])
-#                 inits[i].properties[:γ] = exp(log(inits[i].properties[:γ]) + epsilons[3,i])
-#             end
-#         end
-#
-#         print("y[", t, "] = ", y[t], "\n")
-#         for i in 1:N
-#             print("y_pf[",t,",",i,"] = ", y_pf[t, i], "\n")
-#         end
-#
-#         log_w[t, :] = map(x -> logpdf(MvNormal([y[t]], R), x), map(x -> [x], y_pf[t, :]))
-#
-#         # To avoid underflow subtract the maximum before moving from
-#         # log space
-#         wn = map(x -> exp(x), log_w[t, :] .- maximum(log_w[t, :]));
-#         wn = wn / sum(wn);
-#         print("wn = ", wn, "\n")
-#     end
-#
-#     log_W = sum(map(log, map(x -> x / N, sum(map(exp, log_w[1:T, :]), dims=2))));
-#
-#     return(y_pf, log_w, log_W)
-#
-# end
-#
-# #creates P models with some variation in the params
-# inits = [init_model(rand(LogNormal(log(β), Qbeta)), rand(LogNormal(log(c), Qc)), rand(LogNormal(log(γ), Qgamma)), N, 1) for n in 1:P]
-#
-# (end_states, bar, baz) = pf(inits, P, map(x -> convert(Float64,x), actuals), Q, R);
-#
-# function modelCounts(abm_model)
-#     nS = 0.0
-#     nI = 0.0
-#     nR = 0.0
-#     num_students = 763
-#     for i in 1:num_students
-#         status = get!(abm_model.agents, i, undef).status;
-#         if status == :S
-#             nS = nS + 1
-#         elseif status == :I
-#             nI = nI + 1
-#         else
-#             nR = nR + 1
-#         end
-#     end
-#     return nS, nI, nR
-# end
+# ------------------
+# Particle Filtering
+# ------------------
+
+Qbeta  = 1.0e-6
+Qc     = 5.0e-7
+Qgamma = 5.0e-7
+# Parameter update covariace aka parameter diffusivity
+Q = [Qbeta 0.00 0.00; 0.0 Qc 0.0; 0.0 0.0 Qgamma];
+
+
+# Observation covariance
+R = Matrix{Float64}(undef,1,1); #don't change
+R[1,1] = 0.1;
+# Number of particles
+P = 50;
+
+function resample_stratified(weights)
+
+    N = length(weights)
+    # make N subdivisions, and chose a random position within each one
+    positions =  (rand(N) + collect(range(0, N - 1, length = N))) / N
+
+    indexes = zeros(Int64, N)
+    cumulative_sum = cumsum(weights)
+    i, j = 1, 1
+    while i <= N
+        if positions[i] < cumulative_sum[j]
+            indexes[i] = j
+            i += 1
+        else
+            j += 1
+        end
+    end
+    return indexes
+end
+
+function pf(inits, N, y, Q, R)
+
+    T = length(y)
+    log_w = zeros(T,N);
+    y_pf = zeros(T,N);
+    y_pf[1,:] = map(x -> x[2], map(modelCounts, inits))
+    wn = zeros(N);
+
+    for t = 1:T
+        if t >= 2
+            a = resample_stratified(wn);
+            print("a = ", a, "\n")
+
+            inits = inits[a]
+            for i in 1:N
+                Agents.step!(inits[i], agent_step!, 10)
+                currS, currI, currR = modelCounts(inits[i])
+                # print("props = ", inits[i].properties, " currS = ", currS, " currI = ", currI, " currR = ", currR, "\n")
+                y_pf[t,i] = currI
+            end
+
+            epsilons = rand(MvNormal(zeros(3), Q), N)
+            for i in 1:N
+                inits[i].properties[:β] = exp(log(inits[i].properties[:β]) + epsilons[1,i])
+                inits[i].properties[:c] = exp(log(inits[i].properties[:c]) + epsilons[2,i])
+                inits[i].properties[:γ] = exp(log(inits[i].properties[:γ]) + epsilons[3,i])
+            end
+        end
+
+        print("y[", t, "] = ", y[t], "\n")
+        for i in 1:N
+            print("y_pf[",t,",",i,"] = ", y_pf[t, i], "\n")
+        end
+
+        log_w[t, :] = map(x -> logpdf(MvNormal([y[t]], R), x), map(x -> [x], y_pf[t, :]))
+
+        # To avoid underflow subtract the maximum before moving from
+        # log space
+        wn = map(x -> exp(x), log_w[t, :] .- maximum(log_w[t, :]));
+        wn = wn / sum(wn);
+        print("wn = ", wn, "\n")
+    end
+
+    log_W = sum(map(log, map(x -> x / N, sum(map(exp, log_w[1:T, :]), dims=2))));
+
+    return(y_pf, log_w, log_W)
+
+end
+
+#creates P models with some variation in the params
+inits = [init_model(rand(LogNormal(log(β), Qbeta)), rand(LogNormal(log(c), Qc)), rand(LogNormal(log(γ), Qgamma)), N, 1) for n in 1:P]
+
+(end_states, bar, baz) = pf(inits, P, map(x -> convert(Float64,x), actuals), Q, R);
+
+function modelCounts(abm_model)
+    nS = 0.0
+    nI = 0.0
+    nR = 0.0
+    num_students = 763
+    for i in 1:num_students
+        status = get!(abm_model.agents, i, undef).status;
+        if status == :S
+            nS = nS + 1
+        elseif status == :I
+            nI = nI + 1
+        else
+            nR = nR + 1
+        end
+    end
+    return nS, nI, nR
+end
