@@ -162,20 +162,20 @@ Plots.plot!(t, mean_of_50, label = "Mean",lw = 2, color = "black")
 
 ##fliter the non working ones
 #a_flit = zeros(361,50)
-for col in eachcol(a_50)
-    if (sum(col) < 10)
-        a_f[col+1] = col;
-    end
-
-end
-a_f = zeros(361,50);
-for j in 1:size(a_50)[2]
-    if (sum(a_50[:,j]) > 30)
-        a_f[:,j] = a_50[:,j];
-    else
-        a_f[:,j] = NaN;
-    end
-end
+# for col in eachcol(a_50)
+#     if (sum(col) < 10)
+#         a_f[col+1] = col;
+#     end
+#
+# end
+# a_f = zeros(361,50);
+# for j in 1:size(a_50)[2]
+#     if (sum(a_50[:,j]) > 30)
+#         a_f[:,j] = a_50[:,j];
+#     else
+#         a_f[:,j] = NaN;
+#     end
+# end
 
 
 ## plotting the mean, std, median
