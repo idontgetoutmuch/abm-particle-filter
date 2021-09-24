@@ -17,7 +17,7 @@ using StatsPlots
 ## agent type
 mutable struct Student <: AbstractAgent
     id::Int
-    status::Symbol  # 1: S, 2: I, 3:R
+    status::Symbol  # 1: S, 2: J, 3: I, 4: R
 end
 
 ## function to calculate gamma
@@ -28,8 +28,8 @@ end;
 
 
 ##model function
-function init_model(β :: Float64, c :: Float64, γ :: Float64, N :: Int64, I0 :: Int64)
-    properties = @dict(β,c,γ)
+function init_model(β :: Float64, c :: Float64, γ :: Float64, N :: Int64, I0 :: Int64, G :: Vector{Int64})
+    properties = @dict(β,c,γ,G)
     model = ABM(Student; properties=properties)
     for i in 1 : N #for all students
         if i <= I0 # infect initial number of students
@@ -48,6 +48,7 @@ end;
 function agent_step!(agent, model)
     transmit!(agent, model)
     recover!(agent, model)
+    develop!(agent, model)
 end;
 
 function transmit!(agent, model)
@@ -61,13 +62,12 @@ function transmit!(agent, model)
         # if random agent is infected, and rand is <=
         # beta (infection rate)
         if alter.status == :I && (rand() ≤ model.properties[:β])
-            # An infection occurs
-            agent.status = :I
+            # An pre-infection occurs
+            agent.status = :J
             break
         end
     end
 end;
-
 
 function recover!(agent, model)
     #if agent is not infected, then returns
@@ -75,23 +75,34 @@ function recover!(agent, model)
     #if random probability of recovery <= gamma
     if rand() ≤ model.properties[:γ]
         #then recover agent
-            agent.status = :R
+        agent.status = :R
     end
+end;
+
+function develop!(agent, model)
+    #if agent is not pre-infected then return
+    agent.status != :J && return
+    #infected always becomes infected
+    agent.status = :I
 end;
 
 ##functions to determine S,I,R
 susceptible(x) = count(i == :S for i in x)
+pre_infected(x) = count(i == :J for i in x)
 infected(x) = count(i == :I for i in x)
 recovered(x) = count(i == :R for i in x);
 
 ##model parameters
-δt = 0.1
-nsteps = 150
+# δt = 0.1
+δt = 1.0
+# nsteps = 150
+nsteps = 15
 tf = nsteps * δt #t final
 t = 0 : δt : tf; #time vector
 
+β = 0.15
 # β = 0.05
-β = 0.25
+# β = 0.25
 # c = 10.0 * δt
 c = 7.5 * δt #contact rate
 # γ = rate_to_proportion(0.25, δt);
@@ -107,10 +118,10 @@ actuals = [1, 3, 8, 28, 76, 222, 293, 257, 237, 192, 126, 70, 28, 12, 5]
 Random.seed!(1234);
 
 #create model
-abm_model = init_model(β, c, γ, N, I0)
+abm_model = init_model(β, c, γ, N, I0, G)
 
 #collect data
-to_collect = [(:status, f) for f in (susceptible, infected, recovered)]
+to_collect = [(:status, f) for f in (susceptible, pre_infected, infected, recovered)]
 abm_data, _ = run!(abm_model, agent_step!, nsteps; adata = to_collect);
 
 abm_data[!,:t] = t;
@@ -121,19 +132,20 @@ Plots.plot!(t,abm_data[:,4],label="R")
 Plots.plot!(1:15, actuals, label="A")
 
 ##run 50 times
-model_1 = init_model(β, c, γ, N, I0);
+model_1 = init_model(β, c, γ, N, I0, G);
 agent_50_df, _ = run!(model_1, agent_step!, nsteps; adata = to_collect);
 agent_50_df[!,:t] = t;
 
-a_50 = agent_50_df[:,3];
+a_50 = agent_50_df[:,4];
 
 # 151 element vector
+# 16 element vector
 
 for i in 2:50
-    model_2 = init_model(β, c, γ, N, I0)
+    model_2 = init_model(β, c, γ, N, I0, G)
     agent_df_2, _ = run!(model_2,agent_step!,nsteps; adata = to_collect);
 
-    a_1 = agent_df_2[:,3];
+    a_1 = agent_df_2[:,4];
     global a_50 = [a_50 a_1]
 end
 
@@ -156,57 +168,6 @@ Plots.plot!(t, median_of_50, label = "Median", lw = 2)
 Plots.plot!(t, 2*std_of_50 + mean_of_50, label = "2+ std", lw = 2)
 Plots.plot!(t, abs.(mean_of_50 - 2*std_of_50) , label = "2- std", lw = 2)
 
-
-
-## Particle filter
-
-
-#new functions that are not agent dependent
-function one_step!(model)
-    transmit_one_step!(model)
-    recover_one_step!(model)
-end;
-
-function transmit_one_step!(model)
-    # If I'm not susceptible, I return
-    agent = random_agent(model)
-    agent.status != :S && return
-    #based on c value, decide contacts
-    ncontacts = rand(Poisson(model.properties[:c]))
-    for i in 1:ncontacts
-        # Choose random individual
-        alter = random_agent(model)
-        # if random agent is infected, and rand is <=
-        # beta (infection rate)
-        if alter.status == :I && (rand() ≤ model.properties[:β])
-            # An infection occurs --> instead of infecting the agent,
-            # a random agent is infected instead
-            another_agent = random_agent(model, condition(:R))
-            if isnothing(another_agent)
-                break
-            else
-                another_agent.status = :I
-                break
-            end
-        end
-    end
-end;
-
-
-function recover_one_step!(model)
-    agent = random_agent(model)
-    #if agent is not infected, then returns
-    agent.status != :I && return
-    #if random probability of recovery <= gamma
-    if rand() ≤ model.properties[:γ]
-        #then recover agent
-            agent.status = :R
-    end
-end;
-
-
-
-
 # ------------------
 # Particle Filtering
 # ------------------
@@ -223,6 +184,7 @@ R = Matrix{Float64}(undef,1,1); #don't change
 R[1,1] = 0.1;
 # Number of particles
 P = 50;
+# P = 500;
 
 function resample_stratified(weights)
 
@@ -248,7 +210,7 @@ function pf(inits, N, y, Q, R)
 
     T = length(y)
     log_w = zeros(T,N);
-    y_pf = zeros(T,N);
+    y_pf = zeros(Int64,T,N);
     y_pf[1,:] = map(x -> x[2], map(modelCounts, inits))
     wn = zeros(N);
 
@@ -256,12 +218,21 @@ function pf(inits, N, y, Q, R)
         if t >= 2
             a = resample_stratified(wn);
             print("a = ", a, "\n")
-
+            for i in 1:N
+                print("i = ", i, " a[i] = ", a[i])
+                inits[i].properties[:G][t] = a[i]
+                print(" inits[i].properties[:G][t] = ", inits[i].properties[:G][t], "\n")
+            end
             inits = inits[a]
             for i in 1:N
-                Agents.step!(inits[i], agent_step!, 10)
+                print(" inits[i].properties[:G][t] = ", inits[i].properties[:G][t], "\n")
+            end
+            for i in 1:N
+                # Agents.step!(inits[i], agent_step!, 10)
+                Agents.step!(inits[i], agent_step!, 1)
                 currS, currI, currR = modelCounts(inits[i])
                 # print("props = ", inits[i].properties, " currS = ", currS, " currI = ", currI, " currR = ", currR, "\n")
+                # print("currS = ", currS, " currI = ", currI, " currR = ", currR, " Total = ", currR + currI + currS, "\n")
                 y_pf[t,i] = currI
             end
 
@@ -294,11 +265,14 @@ function pf(inits, N, y, Q, R)
 end
 
 #creates P models with some variation in the params
-inits = [init_model(rand(LogNormal(log(β), Qbeta)), rand(LogNormal(log(c), Qc)), rand(LogNormal(log(γ), Qgamma)), N, 1) for n in 1:P]
+G = zeros(Int64, 15)
 
-(end_states, bar, baz) = pf(inits, P, map(x -> convert(Float64,x), actuals), Q, R);
+inits = [init_model(rand(LogNormal(log(β), Qbeta)), rand(LogNormal(log(c), Qc)), rand(LogNormal(log(γ), Qgamma)), N, 1, copy(G)) for n in 1:P]
 
-function modelCounts(abm_model)
+# (end_states, bar, baz) = pf(inits, P, map(x -> convert(Float64,x), actuals), Q, R);
+(end_states, bar, baz) = pf(inits, P, map(x -> convert(Float64,x), actuals[1:4]), Q, R);
+
+Function modelCounts(abm_model)
     nS = 0.0
     nI = 0.0
     nR = 0.0
