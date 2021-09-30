@@ -2,6 +2,7 @@
 using Agents, Random
 using InteractiveDynamics
 using CairoMakie
+using Plots
 
 mutable struct KoalaOrEucalyptus <: AbstractAgent
     id::Int
@@ -19,14 +20,14 @@ Eucalyptus(id, pos, death_prob,production_rate, consume_rate) = KoalaOrEucalyptu
 
 
 function initialize_model(;
-    n_koala = 5,
+    n_koala = 10,
     n_eucalyptus = 20,
-    koala_death_rate = 8e-3,
-    eucalyptus_production_rate = 0.009,
-    eucalyptus_consume_rate = 0.05,
+    koala_death_rate = 0.005,
+    eucalyptus_production_rate = 0.008,
+    eucalyptus_consume_rate = 0.04,
     seed = 23182,
      )
-     space = GridSpace((10, 10); periodic = false)
+     space = GridSpace((20, 20); periodic = true)
      properties = Dict(:euca_pr => eucalyptus_production_rate, :koala_dr => koala_death_rate, :euca_cr => eucalyptus_consume_rate)
      #properties = ()
 
@@ -65,6 +66,20 @@ koalas(m) = count(a.type == :koala for a in allagents(m))
     else
         eucalyptus_step!(agent,model)
     end
+
+    num_euca = leaf(model)
+    num_koalas = koalas(model)
+
+    if num_euca == 0
+        if rand() < model.euca_pr
+            id = nextid(model)
+            eucalyptus_new = Eucalyptus(id, (1, 1), 0, model.euca_pr, model.euca_cr)
+            add_agent_single!(eucalyptus_new, model)
+        end
+    end
+
+
+
  end
 
  function koala_step!(koala,model)
@@ -94,8 +109,8 @@ koalas(m) = count(a.type == :koala for a in allagents(m))
      #make new koala at random space
      num_koalas = koalas(model) #num koalas
      num_eucalyptus = leaf(model) #num of eucalyptus
-     prob_contact = num_koalas/(num_eucalyptus + num_koalas) #determine prob of contact
-     if rand() < prob_contact
+     # prob_contact = num_koalas/(num_eucalyptus + num_koalas) #determine prob of contact
+     # if rand() < prob_contact
          if rand() < model.euca_cr
              for neighbor in nearby_agents(koala, model)
                  if neighbor.type == :eucalyptus #if neighbour is eucalyptus
@@ -107,7 +122,7 @@ koalas(m) = count(a.type == :koala for a in allagents(m))
                  end
              end
          end
-     end
+
 
      #after, we can also kill the agent based on prob
      if rand() < koala.death_prob
@@ -136,7 +151,7 @@ end
  eucalyptus(a) = a.type == :eucalyptus
 
  model = initialize_model()
- n_steps = 1000
+ n_steps = 2000
  adata = [(koala, count), (eucalyptus, count)]
  adf, _ = run!(model, agent_step!, dummystep, n_steps; adata)
 
@@ -150,3 +165,47 @@ end
  end
 
  plot_population_timeseries(adf)
+
+
+
+ # model_1 = initialize_model();
+ # agent_50_df, _ = run!(model_1, agent_step!, nsteps; adata = to_collect);
+ # agent_50_df[!,:t] = t;
+
+ a_koalas = adf[:,2];
+ a_euca = adf[:,3];
+
+ # 151 element vector
+
+ for i in 2:50
+     model_2 = initialize_model()
+     n_step = 2000;
+     agent_df_2, _ = run!(model_2, agent_step!, dummystep,n_step; adata);
+     a_1 = agent_df_2[:,2];
+     a_2 = agent_df_2[:,3];
+     global a_koalas = [a_koalas a_1]
+     global a_euca = [a_euca a_2]
+ end
+
+ # to_remove = [];
+ #
+ # for j in 1:size(a_50)[2]
+ #     if (sum(a_50[:,j]) <= 300)
+ #         push!(to_remove,j)
+ #     end
+ # end
+ #
+ # filt_a_50 = a_50[:, setdiff(1:end, (to_remove))]
+ # mean_of_50 = mean(filt_a_50, dims = 2)
+
+ Plots.plot(adf.step, a_koalas[:,1], legend = :none, title = "ABM results for 50 runs",xlab="Time step",ylabel="Number", linecolor = :red)
+  Plots.plot!(adf.step, a_euca[:,1], legend = :none, title = "ABM results for 50 runs",xlab="Time step",ylabel="Number", linecolor = :green)
+ for i in 2:(size(a_koalas)[2]-1)
+     #Plots.plot!(t, a_50[:,i])#, seriestype = :scatter)
+     Plots.plot!(adf.step, a_koalas[:,i], linecolor = :red)
+     Plots.plot!(adf.step, a_euca[:,i], linecolor = :green)
+
+ end
+ #Plots.plot!(t,a_50[:,50])#, seriestype = :scatter)
+ Plots.plot!(adf.step, a_koalas[:,size(a_koalas)[2]], linecolor = :red)
+ Plots.plot!(adf.step, a_euca[:,size(a_koalas)[2]], linecolor = :green)
