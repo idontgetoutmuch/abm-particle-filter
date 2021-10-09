@@ -183,7 +183,8 @@ Q = [Qbeta 0.00 0.00; 0.0 Qc 0.0; 0.0 0.0 Qgamma];
 R = Matrix{Float64}(undef,1,1); #don't change
 R[1,1] = 0.1;
 # Number of particles
-P = 50;
+P = 5;
+# P = 50;
 # P = 500;
 
 function resample_stratified(weights)
@@ -219,21 +220,24 @@ function pf(inits, N, y, Q, R)
             a = resample_stratified(wn);
             print("a = ", a, "\n")
             for i in 1:N
-                print("i = ", i, " a[i] = ", a[i])
                 inits[i].properties[:G][t] = a[i]
-                print(" inits[i].properties[:G][t] = ", inits[i].properties[:G][t], "\n")
+                print(" inits[", i, "].properties[:G][", t, "] = ", inits[i].properties[:G][t], "\n")
             end
             inits = inits[a]
             for i in 1:N
-                print(" inits[i].properties[:G][t] = ", inits[i].properties[:G][t], "\n")
+                print(" inits[", i, "].properties[:G][", t, "] = ", inits[i].properties[:G][t], "\n")
             end
+
+            print("y[", t, "] = ", y[t], "\n")
+
             for i in 1:N
                 # Agents.step!(inits[i], agent_step!, 10)
                 Agents.step!(inits[i], agent_step!, 1)
-                currS, currI, currR = modelCounts(inits[i])
+                currS, currJ, currI, currR = modelCounts(inits[i])
                 # print("props = ", inits[i].properties, " currS = ", currS, " currI = ", currI, " currR = ", currR, "\n")
                 # print("currS = ", currS, " currI = ", currI, " currR = ", currR, " Total = ", currR + currI + currS, "\n")
                 y_pf[t,i] = currI
+                print("y_pf[",t,",",i,"] = ", y_pf[t, i], " (", currS, ", ", currJ, ", ", currR, ")\n")
             end
 
             epsilons = rand(MvNormal(zeros(3), Q), N)
@@ -244,36 +248,71 @@ function pf(inits, N, y, Q, R)
             end
         end
 
-        print("y[", t, "] = ", y[t], "\n")
-        for i in 1:N
-            print("y_pf[",t,",",i,"] = ", y_pf[t, i], "\n")
-        end
-
         log_w[t, :] = map(x -> logpdf(MvNormal([y[t]], R), x), map(x -> [x], y_pf[t, :]))
 
         # To avoid underflow subtract the maximum before moving from
         # log space
         wn = map(x -> exp(x), log_w[t, :] .- maximum(log_w[t, :]));
         wn = wn / sum(wn);
+        print(typeof(wn))
         print("wn = ", wn, "\n")
     end
 
     log_W = sum(map(log, map(x -> x / N, sum(map(exp, log_w[1:T, :]), dims=2))));
 
-    return(y_pf, log_w, log_W)
+    return(y_pf, log_w, log_W, inits)
 
 end
 
-#creates P models with some variation in the params
-G = zeros(Int64, 15)
+function pf0(inits, log_w, N, y, Q, R)
 
-inits = [init_model(rand(LogNormal(log(β), Qbeta)), rand(LogNormal(log(c), Qc)), rand(LogNormal(log(γ), Qgamma)), N, 1, copy(G)) for n in 1:P]
+    wn = zeros(N);
+    wn = map(x -> exp(x), log_w[:] .- maximum(log_w[:]));
+    wn = wn / sum(wn);
+    print("wn = ", wn, "\n")
+    print(typeof(log_w))
+    print(typeof(wn))
 
-# (end_states, bar, baz) = pf(inits, P, map(x -> convert(Float64,x), actuals), Q, R);
-(end_states, bar, baz) = pf(inits, P, map(x -> convert(Float64,x), actuals[1:4]), Q, R);
+    y_pf = zeros(Int64,N);
+    y_pf = map(x -> x[2], map(modelCounts, inits))
 
-Function modelCounts(abm_model)
+    a = resample_stratified(wn);
+    print("a = ", a, "\n")
+    inits = inits[a]
+
+    print("y = ", y, "\n")
+
+    for i in 1:N
+        Agents.step!(inits[i], agent_step!, 1)
+        currS, currJ, currI, currR = modelCounts(inits[i])
+        y_pf[i] = currI
+        print("y_pf[",i,"] = ", y_pf[i], " (", currS, ", ", currJ, ", ", currR, ")\n")
+    end
+
+    epsilons = rand(MvNormal(zeros(3), Q), N)
+    for i in 1:N
+        inits[i].properties[:β] = exp(log(inits[i].properties[:β]) + epsilons[1,i])
+        inits[i].properties[:c] = exp(log(inits[i].properties[:c]) + epsilons[2,i])
+        inits[i].properties[:γ] = exp(log(inits[i].properties[:γ]) + epsilons[3,i])
+    end
+
+    log_w = map(x -> logpdf(MvNormal([y], R), x), map(x -> [x], y_pf))
+
+    # To avoid underflow subtract the maximum before moving from
+    # log space
+    wn = map(x -> exp(x), log_w .- maximum(log_w));
+    wn = wn / sum(wn);
+    print("wn = ", wn, "\n")
+
+    log_W = NaN;
+
+    return(y_pf, log_w, log_W, inits)
+
+end
+
+function modelCounts(abm_model)
     nS = 0.0
+    nJ = 0.0
     nI = 0.0
     nR = 0.0
     num_students = 763
@@ -281,11 +320,27 @@ Function modelCounts(abm_model)
         status = get!(abm_model.agents, i, undef).status;
         if status == :S
             nS = nS + 1
+        elseif status == :J
+            nJ = nJ + 1
         elseif status == :I
             nI = nI + 1
         else
             nR = nR + 1
         end
     end
-    return nS, nI, nR
+    return nS, nJ, nI, nR
 end
+
+#creates P models with some variation in the params
+G = zeros(Int64, 15)
+
+Random.seed!(1234);
+
+inits = [init_model(rand(LogNormal(log(β), Qbeta)), rand(LogNormal(log(c), Qc)), rand(LogNormal(log(γ), Qgamma)), N, 1, copy(G)) for n in 1:P]
+
+# (end_states, bar, baz) = pf(inits, P, map(x -> convert(Float64,x), actuals), Q, R);
+(end_states, bar, baz, jnits) = pf(inits, P, map(x -> convert(Float64,x), actuals[1:5]), Q, R);
+
+(end_states1, bar1, baz1, inits1) = pf(inits, P, map(x -> convert(Float64,x), actuals[1:1]), Q, R);
+(end_states2, bar2, baz2, inits2) = pf0(inits1, bar1, P, map(x -> convert(Float64,x), actuals[2]), Q, R);
+
