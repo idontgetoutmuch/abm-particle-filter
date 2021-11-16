@@ -1,16 +1,9 @@
 using Agents
 using Random
-# using DataFrames
-# using LightGraphs
 using Distributions
 using DrWatson: @dict
-using Plots
-# using InteractiveDynamics
-# using CairoMakie
+using Plots plot
 using Statistics: mean
-# using DifferentialEquations
-# using SimpleDiffEq
-# using StatsPlots
 
 
 # Agent type
@@ -138,8 +131,7 @@ end
 function pf(inits, log_w, N, y, Q, R)
 
     wn = zeros(N);
-    jnits = [init_model(rand(LogNormal(log(β), Qbeta)), rand(LogNormal(log(c), Qc)), rand(LogNormal(log(γ), Qgamma)), N, 1) for n in 1:P]
-
+    jnits = [init_model(β, c, γ, N, 1) for n in 1:P]
     wn = map(x -> exp(x), log_w[:] .- maximum(log_w[:]));
     wn = wn / sum(wn);
 
@@ -155,13 +147,6 @@ function pf(inits, log_w, N, y, Q, R)
         Agents.step!(jnits[i], agent_step!, 1)
         currS, currJ, currI, currR = modelCounts(jnits[i])
         y_pf[i] = currI
-    end
-
-    epsilons = rand(MvNormal(zeros(3), Q), N)
-    for i in 1:N
-        jnits[i].properties[:β] = exp(log(jnits[i].properties[:β]) + epsilons[1,i])
-        jnits[i].properties[:c] = exp(log(jnits[i].properties[:c]) + epsilons[2,i])
-        jnits[i].properties[:γ] = exp(log(jnits[i].properties[:γ]) + epsilons[3,i])
     end
 
     log_w = map(x -> logpdf(MvNormal([y], R), x), map(x -> [x], y_pf))
@@ -195,10 +180,9 @@ function modelCounts(abm_model)
 end
 
 
-
 Random.seed!(1234);
 
-templates = [init_model(rand(LogNormal(log(β), Qbeta)), rand(LogNormal(log(c), Qc)), rand(LogNormal(log(γ), Qgamma)), N, 1) for n in 1:P]
+templates = [init_model(β, c, γ, N, 1) for n in 1:P]
 
 function runPf(inits, init_log_weights, predicted1, Q, R)
     l = length(actuals)
@@ -221,7 +205,9 @@ function particleFilter(templates, P, actuals, Q, R)
     return predicted;
 end
 
-@time faa = particleFilter(templates, P, actuals, Q, R);
+@time predicted = particleFilter(templates, P, actuals, Q, R);
+
+l = length(actuals)
 
 Plots.plot(1:l, actuals, label="Actual", color = "red", lw = 3, title = string("Results from ", P, " runs"), xlab="Time",ylabel="Number")
 Plots.plot!(1:l, predicted, label="Tracked by Particle Filter", color = "blue", lw = 3)
