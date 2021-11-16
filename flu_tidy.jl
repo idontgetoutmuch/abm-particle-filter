@@ -2,7 +2,7 @@ using Agents
 using Random
 using Distributions
 using DrWatson: @dict
-using Plots plot
+using Plots
 using Statistics: mean
 
 
@@ -64,34 +64,6 @@ function develop!(agent, model)
     agent.status = :I
 end;
 
-# Model parameters
-δt = 1.0
-nsteps = 15
-tf = nsteps * δt;
-t = 0 : δt : tf;
-
-β = 0.15
-c = 7.5 * δt
-γ = rate_to_proportion(0.50, δt);
-
-N = 763
-I0 = 1;
-
-actuals = [1, 3, 8, 28, 76, 222, 293, 257, 237, 192, 126, 70, 28, 12, 5]
-
-# ------------------
-# Particle Filtering
-# ------------------
-
-Qbeta  = 1.0e-6
-Qc     = 5.0e-7
-Qgamma = 5.0e-7
-
-Q = [Qbeta 0.00 0.00; 0.0 Qc 0.0; 0.0 0.0 Qgamma];
-R = Matrix{Float64}(undef,1,1);
-R[1,1] = 0.1;
-
-P = 50;
 
 function resample_stratified(weights)
 
@@ -112,7 +84,7 @@ function resample_stratified(weights)
     return indexes
 end
 
-function pf_init(inits, N, y, Q, R)
+function pf_init(inits, N, y, R)
 
     log_w = zeros(N);
     y_pf = zeros(Int64,N);
@@ -128,7 +100,7 @@ function pf_init(inits, N, y, Q, R)
 
 end
 
-function pf(inits, log_w, N, y, Q, R)
+function pf(inits, log_w, N, y, R)
 
     wn = zeros(N);
     jnits = [init_model(β, c, γ, N, 1) for n in 1:P]
@@ -179,18 +151,13 @@ function modelCounts(abm_model)
     return nS, nJ, nI, nR
 end
 
-
-Random.seed!(1234);
-
-templates = [init_model(β, c, γ, N, 1) for n in 1:P]
-
-function runPf(inits, init_log_weights, predicted1, Q, R)
+function runPf(inits, init_log_weights, predicted1, R)
     l = length(actuals)
     predicted = zeros(l);
     predicted[1] = predicted1;
 
     for i in 2:l
-        (end_states2, logWeights2, inits2, a2) = pf(deepcopy(inits), init_log_weights, P, map(x -> convert(Float64,x), actuals[i]), Q, R);
+        (end_states2, logWeights2, inits2, a2) = pf(deepcopy(inits), init_log_weights, P, map(x -> convert(Float64,x), actuals[i]), R);
         predicted[i] = mean(end_states2);
         inits = inits2;
         init_log_weights = logWeights2;
@@ -198,14 +165,34 @@ function runPf(inits, init_log_weights, predicted1, Q, R)
     return predicted;
 end
 
-function particleFilter(templates, P, actuals, Q, R)
-    (initial_end_states, init_log_weights, inits) = pf_init(deepcopy(templates), P, map(x -> convert(Float64,x), actuals[1]), Q, R);
+function particleFilter(templates, P, actuals, R)
+    (initial_end_states, init_log_weights, inits) = pf_init(deepcopy(templates), P, map(x -> convert(Float64,x), actuals[1]), R);
     predicted1 = mean(initial_end_states);
-    predicted = runPf(inits, init_log_weights, predicted1, Q, R);
+    predicted = runPf(inits, init_log_weights, predicted1, R);
     return predicted;
 end
 
-@time predicted = particleFilter(templates, P, actuals, Q, R);
+# Finally we can run the particle filter
+Random.seed!(1234);
+
+δt = 1.0;
+β  = 0.15;
+c  = 7.5 * δt;
+γ  = rate_to_proportion(0.50, δt);
+
+N  = 763;
+I0 =   1;
+
+actuals = [1, 3, 8, 28, 76, 222, 293, 257, 237, 192, 126, 70, 28, 12, 5];
+
+R = Matrix{Float64}(undef,1,1);
+R[1,1] = 0.1;
+
+P = 50;
+
+templates = [init_model(β, c, γ, N, 1) for n in 1:P]
+
+@time predicted = particleFilter(templates, P, actuals, R);
 
 l = length(actuals)
 
@@ -260,3 +247,19 @@ function pmh(inits, K, N, n_th, y, f_g, g, nx, prior_sample, prior_pdf, Q, R)
     end
     return (x_pfs, theta);
 end
+
+# ------------------
+# Particle Filtering
+# ------------------
+
+Qbeta  = 1.0e-6
+Qc     = 5.0e-7
+Qgamma = 5.0e-7
+
+Q = [Qbeta 0.00 0.00; 0.0 Qc 0.0; 0.0 0.0 Qgamma];
+R = Matrix{Float64}(undef,1,1);
+R[1,1] = 0.1;
+
+nsteps = 15
+tf = nsteps * δt;
+t = 0 : δt : tf;
