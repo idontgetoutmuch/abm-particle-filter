@@ -1,50 +1,46 @@
-using Agents, Random, DataFrames, LightGraphs
+using Agents
+using Random
+# using DataFrames
+# using LightGraphs
 using Distributions
 using DrWatson: @dict
 using Plots
-using Random
-using InteractiveDynamics
-using CairoMakie
+# using InteractiveDynamics
+# using CairoMakie
 using Statistics: mean
-using DifferentialEquations
-using SimpleDiffEq
-using StatsPlots
+# using DifferentialEquations
+# using SimpleDiffEq
+# using StatsPlots
 
 
-
-
-
-## agent type
+# Agent type
 mutable struct Student <: AbstractAgent
     id::Int
     status::Symbol  # 1: S, 2: J, 3: I, 4: R
 end
 
-## function to calculate gamma
+# Function to calculate gamma
 function rate_to_proportion(r::Float64,t::Float64)
     1-exp(-r*t)
 end;
 
-
-
-##model function
+# Model function
 function init_model(β :: Float64, c :: Float64, γ :: Float64, N :: Int64, I0 :: Int64, G :: Vector{Int64})
     properties = @dict(β,c,γ,G)
     model = ABM(Student; properties=properties)
-    for i in 1 : N #for all students
-        if i <= I0 # infect initial number of students
+    for i in 1 : N
+        if i <= I0
             s = :I
         else
-            s = :S # rest of students are susceptible
+            s = :S
         end
-        p = Student(i,s) #create student agent type
-        p = add_agent!(p,model) #add this student to ABM
+        p = Student(i,s)
+        p = add_agent!(p,model)
     end
     return model
 end;
 
-##Agent step function
-
+# Agent step function
 function agent_step!(agent, model)
     transmit!(agent, model)
     recover!(agent, model)
@@ -52,17 +48,11 @@ function agent_step!(agent, model)
 end;
 
 function transmit!(agent, model)
-    # If I'm not susceptible, I return
     agent.status != :S && return
-    #based on c value, decide contacts
     ncontacts = rand(Poisson(model.properties[:c]))
     for i in 1:ncontacts
-        # Choose random individual
         alter = random_agent(model)
-        # if random agent is infected, and rand is <=
-        # beta (infection rate)
         if alter.status == :I && (rand() ≤ model.properties[:β])
-            # An pre-infection occurs
             agent.status = :J
             break
         end
@@ -70,103 +60,31 @@ function transmit!(agent, model)
 end;
 
 function recover!(agent, model)
-    #if agent is not infected, then returns
     agent.status != :I && return
-    #if random probability of recovery <= gamma
     if rand() ≤ model.properties[:γ]
-        #then recover agent
         agent.status = :R
     end
 end;
 
 function develop!(agent, model)
-    #if agent is not pre-infected then return
     agent.status != :J && return
-    #infected always becomes infected
     agent.status = :I
 end;
 
-##functions to determine S,I,R
-susceptible(x) = count(i == :S for i in x)
-pre_infected(x) = count(i == :J for i in x)
-infected(x) = count(i == :I for i in x)
-recovered(x) = count(i == :R for i in x);
-
-##model parameters
-# δt = 0.1
+# Model parameters
 δt = 1.0
-# nsteps = 150
 nsteps = 15
-tf = nsteps * δt #t final
-t = 0 : δt : tf; #time vector
+tf = nsteps * δt;
+t = 0 : δt : tf;
 
 β = 0.15
-# β = 0.05
-# β = 0.25
-# c = 10.0 * δt
-c = 7.5 * δt #contact rate
-# γ = rate_to_proportion(0.25, δt);
-γ = rate_to_proportion(0.50, δt); #determine gamma
+c = 7.5 * δt
+γ = rate_to_proportion(0.50, δt);
 
-# N = 1000
-N = 763 #total number of students
-# I0 = 10;
-I0 = 1; #one person infected
+N = 763
+I0 = 1;
 
 actuals = [1, 3, 8, 28, 76, 222, 293, 257, 237, 192, 126, 70, 28, 12, 5]
-
-Random.seed!(1234);
-
-#create model
-abm_model = init_model(β, c, γ, N, I0, G)
-
-#collect data
-to_collect = [(:status, f) for f in (susceptible, pre_infected, infected, recovered)]
-abm_data, _ = run!(abm_model, agent_step!, nsteps; adata = to_collect);
-
-abm_data[!,:t] = t;
-
-Plots.plot(t,abm_data[:,2],label="S",xlab="Time",ylabel="Number")
-Plots.plot!(t,abm_data[:,3],label="I")
-Plots.plot!(t,abm_data[:,4],label="R")
-Plots.plot!(1:15, actuals, label="A")
-
-##run 50 times
-model_1 = init_model(β, c, γ, N, I0, G);
-agent_50_df, _ = run!(model_1, agent_step!, nsteps; adata = to_collect);
-agent_50_df[!,:t] = t;
-
-a_50 = agent_50_df[:,4];
-
-# 151 element vector
-# 16 element vector
-
-for i in 2:50
-    model_2 = init_model(β, c, γ, N, I0, G)
-    agent_df_2, _ = run!(model_2,agent_step!,nsteps; adata = to_collect);
-
-    a_1 = agent_df_2[:,4];
-    global a_50 = [a_50 a_1]
-end
-
-Plots.plot(1:15, actuals, label="Actual", color = "red", lw = 3, legend = :outertopleft)
-for i in 1:49
-    Plots.plot!(t, a_50[:,i])#, seriestype = :scatter)
-end
-Plots.plot!(t,a_50[:,50])#, seriestype = :scatter)
-
-
-## plotting the mean, std, median
-# calculate mean, std, median of all runs
-mean_of_50 = mean(a_50, dims = 2)
-median_of_50 = median(a_50, dims = 2)
-std_of_50 = std(a_50, dims = 2)
-
-Plots.plot(1:15, actuals, label="Actual", color = "red", lw = 3, title = "Results from 50 runs", xlab="Time",ylabel="Number")
-Plots.plot!(t, mean_of_50, label = "Mean", lw = 2)
-Plots.plot!(t, median_of_50, label = "Median", lw = 2)
-Plots.plot!(t, 2*std_of_50 + mean_of_50, label = "2+ std", lw = 2)
-Plots.plot!(t, abs.(mean_of_50 - 2*std_of_50) , label = "2- std", lw = 2)
 
 # ------------------
 # Particle Filtering
@@ -175,22 +93,16 @@ Plots.plot!(t, abs.(mean_of_50 - 2*std_of_50) , label = "2- std", lw = 2)
 Qbeta  = 1.0e-6
 Qc     = 5.0e-7
 Qgamma = 5.0e-7
-# Parameter update covariace aka parameter diffusivity
+
 Q = [Qbeta 0.00 0.00; 0.0 Qc 0.0; 0.0 0.0 Qgamma];
-
-
-# Observation covariance
-R = Matrix{Float64}(undef,1,1); #don't change
+R = Matrix{Float64}(undef,1,1);
 R[1,1] = 0.1;
-# Number of particles
-P = 5;
-# P = 50;
-# P = 500;
+
+P = 50;
 
 function resample_stratified(weights)
 
     N = length(weights)
-    # make N subdivisions, and chose a random position within each one
     positions =  (rand(N) + collect(range(0, N - 1, length = N))) / N
 
     indexes = zeros(Int64, N)
@@ -207,106 +119,57 @@ function resample_stratified(weights)
     return indexes
 end
 
-function pf(inits, N, y, Q, R)
+function pf_init(inits, N, y, Q, R)
 
-    T = length(y)
-    log_w = zeros(T,N);
-    y_pf = zeros(Int64,T,N);
-    y_pf[1,:] = map(x -> x[2], map(modelCounts, inits))
+    log_w = zeros(N);
+    y_pf = zeros(Int64,N);
+    y_pf = map(x -> x[3], map(modelCounts, inits))
     wn = zeros(N);
 
-    for t = 1:T
-        if t >= 2
-            a = resample_stratified(wn);
-            print("a = ", a, "\n")
-            for i in 1:N
-                inits[i].properties[:G][t] = a[i]
-                print(" inits[", i, "].properties[:G][", t, "] = ", inits[i].properties[:G][t], "\n")
-            end
-            inits = inits[a]
-            for i in 1:N
-                print(" inits[", i, "].properties[:G][", t, "] = ", inits[i].properties[:G][t], "\n")
-            end
+    log_w = map(x -> logpdf(MvNormal([y], R), x), map(x -> [x], y_pf))
 
-            print("y[", t, "] = ", y[t], "\n")
+    wn = map(x -> exp(x), log_w .- maximum(log_w));
+    wn = wn / sum(wn);
 
-            for i in 1:N
-                # Agents.step!(inits[i], agent_step!, 10)
-                Agents.step!(inits[i], agent_step!, 1)
-                currS, currJ, currI, currR = modelCounts(inits[i])
-                # print("props = ", inits[i].properties, " currS = ", currS, " currI = ", currI, " currR = ", currR, "\n")
-                # print("currS = ", currS, " currI = ", currI, " currR = ", currR, " Total = ", currR + currI + currS, "\n")
-                y_pf[t,i] = currI
-                print("y_pf[",t,",",i,"] = ", y_pf[t, i], " (", currS, ", ", currJ, ", ", currR, ")\n")
-            end
-
-            epsilons = rand(MvNormal(zeros(3), Q), N)
-            for i in 1:N
-                inits[i].properties[:β] = exp(log(inits[i].properties[:β]) + epsilons[1,i])
-                inits[i].properties[:c] = exp(log(inits[i].properties[:c]) + epsilons[2,i])
-                inits[i].properties[:γ] = exp(log(inits[i].properties[:γ]) + epsilons[3,i])
-            end
-        end
-
-        log_w[t, :] = map(x -> logpdf(MvNormal([y[t]], R), x), map(x -> [x], y_pf[t, :]))
-
-        # To avoid underflow subtract the maximum before moving from
-        # log space
-        wn = map(x -> exp(x), log_w[t, :] .- maximum(log_w[t, :]));
-        wn = wn / sum(wn);
-        print(typeof(wn))
-        print("wn = ", wn, "\n")
-    end
-
-    log_W = sum(map(log, map(x -> x / N, sum(map(exp, log_w[1:T, :]), dims=2))));
-
-    return(y_pf, log_w, log_W, inits)
+    return(y_pf, log_w, inits)
 
 end
 
-function pf0(inits, log_w, N, y, Q, R)
+function pf(inits, log_w, N, y, Q, R)
 
     wn = zeros(N);
+    jnits = [init_model(rand(LogNormal(log(β), Qbeta)), rand(LogNormal(log(c), Qc)), rand(LogNormal(log(γ), Qgamma)), N, 1, copy(G)) for n in 1:P]
+
     wn = map(x -> exp(x), log_w[:] .- maximum(log_w[:]));
     wn = wn / sum(wn);
-    print("wn = ", wn, "\n")
-    print(typeof(log_w))
-    print(typeof(wn))
 
     y_pf = zeros(Int64,N);
-    y_pf = map(x -> x[2], map(modelCounts, inits))
 
     a = resample_stratified(wn);
-    print("a = ", a, "\n")
-    inits = inits[a]
-
-    print("y = ", y, "\n")
 
     for i in 1:N
-        Agents.step!(inits[i], agent_step!, 1)
-        currS, currJ, currI, currR = modelCounts(inits[i])
+        jnits[i] = deepcopy(inits[a[i]])
+    end
+
+    for i in 1:N
+        Agents.step!(jnits[i], agent_step!, 1)
+        currS, currJ, currI, currR = modelCounts(jnits[i])
         y_pf[i] = currI
-        print("y_pf[",i,"] = ", y_pf[i], " (", currS, ", ", currJ, ", ", currR, ")\n")
     end
 
     epsilons = rand(MvNormal(zeros(3), Q), N)
     for i in 1:N
-        inits[i].properties[:β] = exp(log(inits[i].properties[:β]) + epsilons[1,i])
-        inits[i].properties[:c] = exp(log(inits[i].properties[:c]) + epsilons[2,i])
-        inits[i].properties[:γ] = exp(log(inits[i].properties[:γ]) + epsilons[3,i])
+        jnits[i].properties[:β] = exp(log(jnits[i].properties[:β]) + epsilons[1,i])
+        jnits[i].properties[:c] = exp(log(jnits[i].properties[:c]) + epsilons[2,i])
+        jnits[i].properties[:γ] = exp(log(jnits[i].properties[:γ]) + epsilons[3,i])
     end
 
     log_w = map(x -> logpdf(MvNormal([y], R), x), map(x -> [x], y_pf))
 
-    # To avoid underflow subtract the maximum before moving from
-    # log space
     wn = map(x -> exp(x), log_w .- maximum(log_w));
     wn = wn / sum(wn);
-    print("wn = ", wn, "\n")
 
-    log_W = NaN;
-
-    return(y_pf, log_w, log_W, inits)
+    return(y_pf, log_w, jnits, a)
 
 end
 
@@ -331,16 +194,83 @@ function modelCounts(abm_model)
     return nS, nJ, nI, nR
 end
 
-#creates P models with some variation in the params
-G = zeros(Int64, 15)
+
 
 Random.seed!(1234);
 
-inits = [init_model(rand(LogNormal(log(β), Qbeta)), rand(LogNormal(log(c), Qc)), rand(LogNormal(log(γ), Qgamma)), N, 1, copy(G)) for n in 1:P]
+templates = [init_model(rand(LogNormal(log(β), Qbeta)), rand(LogNormal(log(c), Qc)), rand(LogNormal(log(γ), Qgamma)), N, 1, copy(G)) for n in 1:P]
 
-# (end_states, bar, baz) = pf(inits, P, map(x -> convert(Float64,x), actuals), Q, R);
-(end_states, bar, baz, jnits) = pf(inits, P, map(x -> convert(Float64,x), actuals[1:5]), Q, R);
+function runPf(inits, init_log_weights, predicted1, Q, R)
+    l = length(actuals)
+    predicted = zeros(l);
+    predicted[1] = predicted1;
 
-(end_states1, bar1, baz1, inits1) = pf(inits, P, map(x -> convert(Float64,x), actuals[1:1]), Q, R);
-(end_states2, bar2, baz2, inits2) = pf0(inits1, bar1, P, map(x -> convert(Float64,x), actuals[2]), Q, R);
+    for i in 2:l
+        (end_states2, logWeights2, inits2, a2) = pf(deepcopy(inits), init_log_weights, P, map(x -> convert(Float64,x), actuals[i]), Q, R);
+        predicted[i] = mean(end_states2);
+        inits = inits2;
+        init_log_weights = logWeights2;
+    end
+    return predicted;
+end
 
+function particleFilter(templates, P, actuals, Q, R)
+    (initial_end_states, init_log_weights, inits) = pf_init(deepcopy(templates), P, map(x -> convert(Float64,x), actuals[1]), Q, R);
+    predicted1 = mean(initial_end_states);
+    predicted = runPf(inits, init_log_weights, predicted1, Q, R);
+    return predicted;
+end
+
+@time faa = particleFilter(inits, P, actuals, Q, R);
+
+Plots.plot(1:l, actuals, label="Actual", color = "red", lw = 3, title = string("Results from ", P, " runs"), xlab="Time",ylabel="Number")
+Plots.plot!(1:l, predicted, label="Tracked by Particle Filter", color = "blue", lw = 3)
+
+function pmh(inits, K, N, n_th, y, f_g, g, nx, prior_sample, prior_pdf, Q, R)
+
+    T = length(y);
+    theta = zeros(n_th, K+1);
+    log_W = -Inf;
+    # FIXME:
+    x_pfs = zeros(nx, N, T, K);
+
+    while log_W == -Inf # Find an initial sample without numerical problems
+        theta[:, 1] = 9 .+ prior_sample(1);
+        # FIXME:
+        log_W = pf(inits, N, (x) -> f_g(x, theta[:, 1][1]), g, y, Q, R, nx)[3];
+    end
+
+    for k = 1:K
+        theta_prop = map(exp, map(log, theta[:, k]) + 0.01 * rand(MvNormal(zeros(n_th), 1), 1)[1, :]);
+        # log_W_prop = pf(inits, N, (x) -> f_g(x, theta_prop[1]), g, y, Q, R, nx)[3];
+        (a, b, c) = pf(inits, N, (x) -> f_g(x, theta_prop[1]), g, y, Q, R, nx);
+        log_W_prop = c;
+        x_pfs[:, :, :, k] = a;
+        mh_ratio = exp(log_W_prop - log_W) * prior_pdf(theta_prop) / prior_pdf(theta[:,k]);
+
+        display([theta[:, k], theta_prop, log_W, log_W_prop, mh_ratio, prior_pdf(theta_prop)]);
+
+        if isnan(mh_ratio)
+            alpha = 0;
+        else
+            alpha = min(1,mh_ratio);
+        end
+
+        dm = rand();
+        if dm < alpha
+            theta[:, k+1] = theta_prop;
+            log_W = log_W_prop;
+            new = true;
+        else
+            theta[:, k+1] = theta[:, k];
+            new = false;
+        end
+
+        # if new == true;
+        #     display(["PMH Sampling ", k, ": Proposal accepted!"]);
+        # else
+        #     display(["PMH Sampling ", k, ": Proposal rejected"]);
+        # end
+    end
+    return (x_pfs, theta);
+end
