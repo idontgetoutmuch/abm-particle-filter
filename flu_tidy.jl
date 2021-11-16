@@ -25,8 +25,8 @@ function rate_to_proportion(r::Float64,t::Float64)
 end;
 
 # Model function
-function init_model(β :: Float64, c :: Float64, γ :: Float64, N :: Int64, I0 :: Int64, G :: Vector{Int64})
-    properties = @dict(β,c,γ,G)
+function init_model(β :: Float64, c :: Float64, γ :: Float64, N :: Int64, I0 :: Int64)
+    properties = @dict(β,c,γ)
     model = ABM(Student; properties=properties)
     for i in 1 : N
         if i <= I0
@@ -138,7 +138,7 @@ end
 function pf(inits, log_w, N, y, Q, R)
 
     wn = zeros(N);
-    jnits = [init_model(rand(LogNormal(log(β), Qbeta)), rand(LogNormal(log(c), Qc)), rand(LogNormal(log(γ), Qgamma)), N, 1, copy(G)) for n in 1:P]
+    jnits = [init_model(rand(LogNormal(log(β), Qbeta)), rand(LogNormal(log(c), Qc)), rand(LogNormal(log(γ), Qgamma)), N, 1) for n in 1:P]
 
     wn = map(x -> exp(x), log_w[:] .- maximum(log_w[:]));
     wn = wn / sum(wn);
@@ -198,7 +198,7 @@ end
 
 Random.seed!(1234);
 
-templates = [init_model(rand(LogNormal(log(β), Qbeta)), rand(LogNormal(log(c), Qc)), rand(LogNormal(log(γ), Qgamma)), N, 1, copy(G)) for n in 1:P]
+templates = [init_model(rand(LogNormal(log(β), Qbeta)), rand(LogNormal(log(c), Qc)), rand(LogNormal(log(γ), Qgamma)), N, 1) for n in 1:P]
 
 function runPf(inits, init_log_weights, predicted1, Q, R)
     l = length(actuals)
@@ -221,7 +221,7 @@ function particleFilter(templates, P, actuals, Q, R)
     return predicted;
 end
 
-@time faa = particleFilter(inits, P, actuals, Q, R);
+@time faa = particleFilter(templates, P, actuals, Q, R);
 
 Plots.plot(1:l, actuals, label="Actual", color = "red", lw = 3, title = string("Results from ", P, " runs"), xlab="Time",ylabel="Number")
 Plots.plot!(1:l, predicted, label="Tracked by Particle Filter", color = "blue", lw = 3)
