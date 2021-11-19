@@ -104,12 +104,11 @@ function pf(inits, g, log_w, N, y, R)
 
     wn = zeros(N);
     jnits = [init_model(β, c, γ, N, 1) for n in 1:P]
+    y_pf = zeros(Int64,N);
 
     wn = exp.(log_w .- maximum(log_w));
     swn = sum(wn);
     wn .= wn ./ swn;
-
-    y_pf = zeros(Int64,N);
 
     a = resample_stratified(wn);
 
@@ -123,10 +122,6 @@ function pf(inits, g, log_w, N, y, R)
     end
 
     log_w = map(x -> logpdf(MvNormal([y], R), x), map(x -> [x], y_pf))
-
-    wn = exp.(log_w .- maximum(log_w));
-    swn = sum(wn);
-    wn .= wn ./ swn;
 
     return(y_pf, log_w, jnits)
 
@@ -153,7 +148,7 @@ function modelCounts(abm_model)
     return nS, nJ, nI, nR
 end
 
-function runPf(inits, g, init_log_weights, predicted1, R)
+function runPf(inits, g, init_log_weights, actuals, predicted1, R)
     l = length(actuals)
     predicted = zeros(l);
     predicted[1] = predicted1;
@@ -170,8 +165,7 @@ end
 function particleFilter(templates, g, P, actuals, R)
     inits = deepcopy(templates);
     (initial_end_states, init_log_weights) = pf_init(inits, g, P, map(x -> convert(Float64,x), actuals[1]), R);
-    predicted1 = mean(initial_end_states);
-    predicted = runPf(inits, g, init_log_weights, predicted1, R);
+    predicted = runPf(inits, g, init_log_weights, actuals, mean(initial_end_states), R);
     return predicted;
 end
 
