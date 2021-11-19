@@ -93,8 +93,9 @@ function pf_init(inits, N, y, R)
 
     log_w = map(x -> logpdf(MvNormal([y], R), x), map(x -> [x], y_pf))
 
-    wn = map(x -> exp(x), log_w .- maximum(log_w));
-    wn = wn / sum(wn);
+    wn = exp.(log_w .- maximum(log_w));
+    swn = sum(wn);
+    wn .= wn ./ swn;
 
     return(y_pf, log_w, inits)
 
@@ -104,8 +105,10 @@ function pf(inits, log_w, N, y, R)
 
     wn = zeros(N);
     jnits = [init_model(β, c, γ, N, 1) for n in 1:P]
-    wn = map(x -> exp(x), log_w[:] .- maximum(log_w[:]));
-    wn = wn / sum(wn);
+
+    wn = exp.(log_w .- maximum(log_w));
+    swn = sum(wn);
+    wn .= wn ./ swn;
 
     y_pf = zeros(Int64,N);
 
@@ -123,10 +126,11 @@ function pf(inits, log_w, N, y, R)
 
     log_w = map(x -> logpdf(MvNormal([y], R), x), map(x -> [x], y_pf))
 
-    wn = map(x -> exp(x), log_w .- maximum(log_w));
-    wn = wn / sum(wn);
+    wn = exp.(log_w .- maximum(log_w));
+    swn = sum(wn);
+    wn .= wn ./ swn;
 
-    return(y_pf, log_w, jnits, a)
+    return(y_pf, log_w, jnits)
 
 end
 
@@ -157,7 +161,7 @@ function runPf(inits, init_log_weights, predicted1, R)
     predicted[1] = predicted1;
 
     for i in 2:l
-        (end_states2, logWeights2, inits2, a2) = pf(deepcopy(inits), init_log_weights, P, map(x -> convert(Float64,x), actuals[i]), R);
+        (end_states2, logWeights2, inits2) = pf(deepcopy(inits), init_log_weights, P, map(x -> convert(Float64,x), actuals[i]), R);
         predicted[i] = mean(end_states2);
         inits = inits2;
         init_log_weights = logWeights2;
@@ -199,6 +203,15 @@ l = length(actuals)
 Plots.plot(1:l, actuals, label="Actual", color = "red", lw = 3, title = string("Results from ", P, " runs"), xlab="Time",ylabel="Number")
 Plots.plot!(1:l, predicted, label="Tracked by Particle Filter", color = "blue", lw = 3)
 
+# Parameters to be estimated
+μ = [β, c, γ]
+var = [[0.001, 0.0, 0.0] [0.0,  0.01, 0.0] [0.0,  0.0, 0.001]]
+K = length(μ);
+
+function prior_sample()
+    rand(MvLogNormal(log.(μ), var))
+end
+
 function pmh(inits, K, N, n_th, y, f_g, g, nx, prior_sample, prior_pdf, Q, R)
 
     T = length(y);
@@ -207,8 +220,9 @@ function pmh(inits, K, N, n_th, y, f_g, g, nx, prior_sample, prior_pdf, Q, R)
     # FIXME:
     x_pfs = zeros(nx, N, T, K);
 
-    while log_W == -Inf # Find an initial sample without numerical problems
-        theta[:, 1] = 9 .+ prior_sample(1);
+    # Find an initial sample without numerical problems
+    while log_W == -Inf
+        theta[:, 1] = prior_sample();
         # FIXME:
         log_W = pf(inits, N, (x) -> f_g(x, theta[:, 1][1]), g, y, Q, R, nx)[3];
     end
