@@ -84,24 +84,23 @@ function resample_stratified(weights)
     return indexes
 end
 
-function pf_init(inits, N, y, R)
+function measure(x)
+    return modelCounts(x)[3]
+end
 
-    log_w = zeros(N);
+function pf_init(inits, g, N, y, R)
+
     y_pf = zeros(Int64,N);
-    y_pf = map(x -> x[3], map(modelCounts, inits))
-    wn = zeros(N);
+    log_w = zeros(N);
 
+    y_pf = map(g, inits)
     log_w = map(x -> logpdf(MvNormal([y], R), x), map(x -> [x], y_pf))
 
-    wn = exp.(log_w .- maximum(log_w));
-    swn = sum(wn);
-    wn .= wn ./ swn;
-
-    return(y_pf, log_w, inits)
+    return(y_pf, log_w)
 
 end
 
-function pf(inits, log_w, N, y, R)
+function pf(inits, g, log_w, N, y, R)
 
     wn = zeros(N);
     jnits = [init_model(β, c, γ, N, 1) for n in 1:P]
@@ -120,8 +119,7 @@ function pf(inits, log_w, N, y, R)
 
     for i in 1:N
         Agents.step!(jnits[i], agent_step!, 1)
-        currS, currJ, currI, currR = modelCounts(jnits[i])
-        y_pf[i] = currI
+        y_pf[i] = g(jnits[i])
     end
 
     log_w = map(x -> logpdf(MvNormal([y], R), x), map(x -> [x], y_pf))
@@ -155,13 +153,13 @@ function modelCounts(abm_model)
     return nS, nJ, nI, nR
 end
 
-function runPf(inits, init_log_weights, predicted1, R)
+function runPf(inits, g, init_log_weights, predicted1, R)
     l = length(actuals)
     predicted = zeros(l);
     predicted[1] = predicted1;
 
     for i in 2:l
-        (end_states2, logWeights2, inits2) = pf(deepcopy(inits), init_log_weights, P, map(x -> convert(Float64,x), actuals[i]), R);
+        (end_states2, logWeights2, inits2) = pf(deepcopy(inits), g, init_log_weights, P, map(x -> convert(Float64,x), actuals[i]), R);
         predicted[i] = mean(end_states2);
         inits = inits2;
         init_log_weights = logWeights2;
@@ -169,10 +167,11 @@ function runPf(inits, init_log_weights, predicted1, R)
     return predicted;
 end
 
-function particleFilter(templates, P, actuals, R)
-    (initial_end_states, init_log_weights, inits) = pf_init(deepcopy(templates), P, map(x -> convert(Float64,x), actuals[1]), R);
+function particleFilter(templates, g, P, actuals, R)
+    inits = deepcopy(templates);
+    (initial_end_states, init_log_weights) = pf_init(inits, g, P, map(x -> convert(Float64,x), actuals[1]), R);
     predicted1 = mean(initial_end_states);
-    predicted = runPf(inits, init_log_weights, predicted1, R);
+    predicted = runPf(inits, g, init_log_weights, predicted1, R);
     return predicted;
 end
 
@@ -196,9 +195,9 @@ P = 50;
 
 templates = [init_model(β, c, γ, N, 1) for n in 1:P]
 
-@time predicted = particleFilter(templates, P, actuals, R);
+@time predicted = particleFilter(templates, measure, P, actuals, R);
 
-l = length(actuals)
+l = length(actuals);
 
 Plots.plot(1:l, actuals, label="Actual", color = "red", lw = 3, title = string("Results from ", P, " runs"), xlab="Time",ylabel="Number")
 Plots.plot!(1:l, predicted, label="Tracked by Particle Filter", color = "blue", lw = 3)
