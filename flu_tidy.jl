@@ -149,24 +149,35 @@ function modelCounts(abm_model)
 end
 
 function runPf(inits, g, init_log_weights, actuals, predicted1, R)
-    l = length(actuals)
+    l         = length(actuals)
     predicted = zeros(l);
+    log_w     = zeros(l, P);
+
     predicted[1] = predicted1;
+    log_w[1, :]  = init_log_weights;
 
     for i in 2:l
-        (end_states2, logWeights2, inits2) = pf(deepcopy(inits), g, init_log_weights, P, map(x -> convert(Float64,x), actuals[i]), R);
-        predicted[i] = mean(end_states2);
-        inits = inits2;
-        init_log_weights = logWeights2;
+        (obs, new_log_weights, news) = pf(deepcopy(inits), g, init_log_weights, P, map(x -> convert(Float64,x), actuals[i]), R);
+        predicted[i] = mean(obs);
+        log_w[i, :]  = new_log_weights;
+
+        inits            = news;
+        init_log_weights = new_log_weights;
     end
-    return predicted;
+    return predicted, log_w;
 end
 
 function particleFilter(templates, g, P, actuals, R)
+    l = length(actuals);
+
     inits = deepcopy(templates);
     (initial_end_states, init_log_weights) = pf_init(inits, g, P, map(x -> convert(Float64,x), actuals[1]), R);
-    predicted = runPf(inits, g, init_log_weights, actuals, mean(initial_end_states), R);
-    return predicted;
+
+    predicted, log_w = runPf(inits, g, init_log_weights, actuals, mean(initial_end_states), R);
+
+    log_W = sum(map(log, map(x -> x / N, sum(map(exp, log_w[:, :]), dims=2))));
+
+    return predicted, log_W;
 end
 
 # Finally we can run the particle filter
@@ -203,6 +214,21 @@ K = length(μ);
 
 function prior_sample()
     rand(MvLogNormal(log.(μ), var))
+end
+
+function pmh(g, P, N, K, actuals, R)
+    theta = zeros(3, K);
+    log_W = -Inf;
+
+    while log_W == -Inf
+        theta[:, 1] = prior_sample();
+        β = theta[1, 1];
+        c = theta[2, 1];
+        γ = theta[3, 1];
+        inits = [init_model(β, c, γ, N, 1) for n in 1:P]
+        predicted, log_W = particleFilter(inits, g, P, actuals, R)
+    end
+    return log_W
 end
 
 function pmh(inits, K, N, n_th, y, f_g, g, nx, prior_sample, prior_pdf, Q, R)
