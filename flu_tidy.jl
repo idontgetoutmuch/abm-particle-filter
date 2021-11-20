@@ -123,7 +123,13 @@ function pf(inits, g, log_w, N, y, R)
 
     log_w = map(x -> logpdf(MvNormal([y], R), x), map(x -> [x], y_pf))
 
-    return(y_pf, log_w, jnits)
+    max_weight = maximum(log_w);
+    wn = exp.(log_w .- max_weight);
+    swn = sum(wn);
+    wn .= wn ./ swn;
+    predictive_likelihood = max_weight + log(swn) - log(N);
+
+    return(y_pf, log_w, predictive_likelihood, jnits)
 
 end
 
@@ -154,17 +160,17 @@ function runPf(inits, g, init_log_weights, actuals, predicted1, R)
     log_w     = zeros(l, P);
 
     predicted[1] = predicted1;
-    log_w[1, :]  = init_log_weights;
+    log_likelihood = 0;
 
     for i in 2:l
-        (obs, new_log_weights, news) = pf(deepcopy(inits), g, init_log_weights, P, map(x -> convert(Float64,x), actuals[i]), R);
+        (obs, new_log_weights, predictive_likelihood, news) = pf(deepcopy(inits), g, init_log_weights, P, map(x -> convert(Float64,x), actuals[i]), R);
         predicted[i] = mean(obs);
-        log_w[i, :]  = new_log_weights;
+        log_likelihood = log_likelihood + predictive_likelihood;
 
         inits            = news;
         init_log_weights = new_log_weights;
     end
-    return predicted, log_w;
+    return predicted, log_likelihood;
 end
 
 function particleFilter(templates, g, P, actuals, R)
@@ -173,11 +179,9 @@ function particleFilter(templates, g, P, actuals, R)
     inits = deepcopy(templates);
     (initial_end_states, init_log_weights) = pf_init(inits, g, P, map(x -> convert(Float64,x), actuals[1]), R);
 
-    predicted, log_w = runPf(inits, g, init_log_weights, actuals, mean(initial_end_states), R);
+    predicted, log_likelihood = runPf(inits, g, init_log_weights, actuals, mean(initial_end_states), R);
 
-    log_W = sum(map(log, map(x -> x / N, sum(map(exp, log_w[:, :]), dims=2))));
-
-    return predicted, log_W;
+    return predicted, log_likelihood;
 end
 
 # Finally we can run the particle filter
@@ -225,8 +229,8 @@ function pmh(g, P, N, K, actuals, R)
         β = theta[1, 1];
         c = theta[2, 1];
         γ = theta[3, 1];
-        inits = [init_model(β, c, γ, N, 1) for n in 1:P]
-        predicted, log_W = particleFilter(inits, g, P, actuals, R)
+        inits = [init_model(β, c, γ, N, 1) for n in 1:P];
+        predicted, log_W = particleFilter(inits, g, P, actuals, R);
     end
     return log_W
 end
