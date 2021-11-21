@@ -208,81 +208,76 @@ templates = [init_model(β, c, γ, N, 1) for n in 1:P]
 
 l = length(actuals);
 
-Plots.plot(1:l, actuals, label="Actual", color = "red", lw = 3, title = string("Results from ", P, " runs"), xlab="Time",ylabel="Number")
-Plots.plot!(1:l, predicted, label="Tracked by Particle Filter", color = "blue", lw = 3)
+Plots.plot(1:l, actuals, label="Actual", color = "red", lw = 3, title = string("Results from ", P, " particles and ", K, " Monte Carlo steps\n"), xlab="Time",ylabel="Number", legend = :left)
+Plots.plot!(1:l, predicted, label="Tracked by Prior Particle Filter", color = "blue", lw = 3)
+# Plots.plot!(1:l, predicted_posterior, label="Tracked by Posterior Particle Filter", color = "green", lw = 3)
 
 # Parameters to be estimated
-μ = [β, c, γ]
-var = [[0.001, 0.0, 0.0] [0.0,  0.01, 0.0] [0.0,  0.0, 0.001]]
-K = length(μ);
+μ = [β, c, γ];
+var = [[0.001, 0.0, 0.0] [0.0,  0.01, 0.0] [0.0,  0.0, 0.001]];
 
-function prior_sample()
+function prior_sample(μ, var)
     rand(MvLogNormal(log.(μ), var))
 end
 
-function pmh(g, P, N, K, actuals, R)
-    theta = zeros(3, K);
-    log_W = -Inf;
+function log_prior_pdf(x, μ, var)
+    logpdf(MvLogNormal(log.(μ), var), x)
+end
 
-    while log_W == -Inf
-        theta[:, 1] = prior_sample();
+K = 3;
+
+function pmh(g, P, N, K, μ, var, actuals, R)
+    theta               = zeros(3, K);
+    prop_acc            = zeros(K);
+    log_likelihood_curr = -Inf;
+
+    # FIXME: Is this really needed now we are using the technique
+    # here:
+    # https://github.com/compops/pmh-tutorial/blob/master/matlab/particleFilter.m#L47
+    while log_likelihood_curr == -Inf
+        theta[:, 1] = prior_sample(μ, var);
         β = theta[1, 1];
         c = theta[2, 1];
         γ = theta[3, 1];
+
         inits = [init_model(β, c, γ, N, 1) for n in 1:P];
-        predicted, log_W = particleFilter(inits, g, P, actuals, R);
-    end
-    return log_W
-end
-
-function pmh(inits, K, N, n_th, y, f_g, g, nx, prior_sample, prior_pdf, Q, R)
-
-    T = length(y);
-    theta = zeros(n_th, K+1);
-    log_W = -Inf;
-    # FIXME:
-    x_pfs = zeros(nx, N, T, K);
-
-    # Find an initial sample without numerical problems
-    while log_W == -Inf
-        theta[:, 1] = prior_sample();
-        # FIXME:
-        log_W = pf(inits, N, (x) -> f_g(x, theta[:, 1][1]), g, y, Q, R, nx)[3];
+        predicted, log_likelihood_curr = particleFilter(inits, g, P, actuals, R);
     end
 
-    for k = 1:K
-        theta_prop = map(exp, map(log, theta[:, k]) + 0.01 * rand(MvNormal(zeros(n_th), 1), 1)[1, :]);
-        # log_W_prop = pf(inits, N, (x) -> f_g(x, theta_prop[1]), g, y, Q, R, nx)[3];
-        (a, b, c) = pf(inits, N, (x) -> f_g(x, theta_prop[1]), g, y, Q, R, nx);
-        log_W_prop = c;
-        x_pfs[:, :, :, k] = a;
-        mh_ratio = exp(log_W_prop - log_W) * prior_pdf(theta_prop) / prior_pdf(theta[:,k]);
+    log_prior_curr = log_prior_pdf(theta[:, 1], μ, var);
 
-        display([theta[:, k], theta_prop, log_W, log_W_prop, mh_ratio, prior_pdf(theta_prop)]);
+    for k = 2:K
+        theta[:, k] = prior_sample(μ, var);
+        β = theta[1, k];
+        c = theta[2, k];
+        γ = theta[3, k];
 
-        if isnan(mh_ratio)
-            alpha = 0;
+        inits = [init_model(β, c, γ, N, 1) for n in 1:P];
+        predicted, log_likelihood_prop = particleFilter(inits, g, P, actuals, R);
+        log_likelihood_diff = log_likelihood_prop - log_likelihood_curr;
+
+        log_prior_curr = log_prior_pdf(theta[:, k - 1], μ, var);
+        log_prior_prop = log_prior_pdf(theta[:, k],     μ, var);
+        log_prior_diff = log_prior_prop - log_prior_curr;
+
+        acceptance_prob = exp(log_prior_diff + log_likelihood_diff);
+
+        r = rand();
+        if (r < acceptance_prob)
+            log_likelihood_curr = log_likelihood_prop;
+            prop_acc[k]         = 1;
         else
-            alpha = min(1,mh_ratio);
+            theta[:, k] = theta[:, k - 1];
+            prop_acc[k] = 0;
         end
 
-        dm = rand();
-        if dm < alpha
-            theta[:, k+1] = theta_prop;
-            log_W = log_W_prop;
-            new = true;
-        else
-            theta[:, k+1] = theta[:, k];
-            new = false;
-        end
-
-        # if new == true;
-        #     display(["PMH Sampling ", k, ": Proposal accepted!"]);
-        # else
-        #     display(["PMH Sampling ", k, ": Proposal rejected"]);
-        # end
+        print("#####################################################################\n");
+        print(" Iteration: ", k, " completed.\n");
+        print(" Current state of the Markov chain: ", theta[:, k], "\n");
+        print(" Current posterior mean: ", mean(theta[:, 1:k], dims = 2), "\n");
+        print(" Current acceptance: ", mean(prop_acc[1:k]), "\n");
+        print("#####################################################################\n");
     end
-    return (x_pfs, theta);
 end
 
 # ------------------
