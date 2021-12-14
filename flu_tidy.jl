@@ -116,6 +116,7 @@ function pf(inits, g, log_w, N, y, R)
         jnits[i] = deepcopy(inits[a[i]])
     end
 
+    # Can this be made parallel?
     for i in 1:N
         Agents.step!(jnits[i], agent_step!, 1)
         y_pf[i] = g(jnits[i])
@@ -223,6 +224,9 @@ function log_prior_pdf(x, μ, var)
     logpdf(MvLogNormal(log.(μ), var), x)
 end
 
+
+# Should prior_sample and log_prior_pdf be paramaters and passed into
+# pmh rather than being global?
 function pmh(g, P, N, K, μ, var, actuals, R)
     # This need generalising - in this case we have 3 parameters but
     # we should handle any number
