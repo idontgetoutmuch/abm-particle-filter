@@ -208,13 +208,12 @@ templates = [init_model(β, c, γ, N, 1) for n in 1:P]
 
 l = length(actuals);
 
-Plots.plot(1:l, actuals, label="Actual", color = "red", lw = 3, title = string("Results from ", P, " particles and ", K, " Monte Carlo steps\n"), xlab="Time",ylabel="Number", legend = :left)
+Plots.plot(1:l, actuals, label="Actual", color = "red", lw = 3, title = string("Results from ", P, " particles\n"), xlab="Time",ylabel="Number", legend = :left)
 Plots.plot!(1:l, predicted, label="Tracked by Prior Particle Filter", color = "blue", lw = 3)
-# Plots.plot!(1:l, predicted_posterior, label="Tracked by Posterior Particle Filter", color = "green", lw = 3)
 
 # Parameters to be estimated
 μ = [β, c, γ];
-var = [[0.001, 0.0, 0.0] [0.0,  0.01, 0.0] [0.0,  0.0, 0.001]];
+var = [[0.002, 0.0, 0.0] [0.0,  0.005, 0.0] [0.0,  0.0, 0.002]];
 
 function prior_sample(μ, var)
     rand(MvLogNormal(log.(μ), var))
@@ -224,9 +223,9 @@ function log_prior_pdf(x, μ, var)
     logpdf(MvLogNormal(log.(μ), var), x)
 end
 
-K = 3;
-
 function pmh(g, P, N, K, μ, var, actuals, R)
+    # This need generalising - in this case we have 3 parameters but
+    # we should handle any number
     theta               = zeros(3, K);
     prop_acc            = zeros(K);
     log_likelihood_curr = -Inf;
@@ -247,7 +246,8 @@ function pmh(g, P, N, K, μ, var, actuals, R)
     log_prior_curr = log_prior_pdf(theta[:, 1], μ, var);
 
     for k = 2:K
-        theta[:, k] = prior_sample(μ, var);
+        theta_prop  = prior_sample(theta[:, k - 1], var);
+        theta[:, k] = theta_prop;
         β = theta[1, k];
         c = theta[2, k];
         γ = theta[3, k];
@@ -274,11 +274,30 @@ function pmh(g, P, N, K, μ, var, actuals, R)
         print("#####################################################################\n");
         print(" Iteration: ", k, " completed.\n");
         print(" Current state of the Markov chain: ", theta[:, k], "\n");
+        print(" Proposed state of the Markov chain: ", theta_prop, "\n");
         print(" Current posterior mean: ", mean(theta[:, 1:k], dims = 2), "\n");
         print(" Current acceptance: ", mean(prop_acc[1:k]), "\n");
         print("#####################################################################\n");
     end
 end
+
+Random.seed!(1234);
+
+K = 100
+pmh(measure, P, N, K, μ, var, actuals, R)
+
+Random.seed!(1234);
+
+# This mean of the posterior was used
+(β, c, γ) = [0.14455132434154833; 9.617284697797249; 0.4849730067859164]
+
+templates = [init_model(β, c, γ, N, 1) for n in 1:P]
+
+@time predicted_posterior = particleFilter(templates, measure, P, actuals, R);
+
+Plots.plot(1:l, actuals, label="Actual", color = "red", lw = 3, title = string("Results from ", P, " particles and ", K, " Monte Carlo steps\n"), xlab="Time",ylabel="Number", legend = :left)
+Plots.plot!(1:l, predicted, label="Tracked by Prior Particle Filter", color = "blue", lw = 3)
+Plots.plot!(1:l, predicted_posterior, label="Tracked by Posterior Particle Filter", color = "green", lw = 3)
 
 # ------------------
 # Particle Filtering
