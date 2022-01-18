@@ -18,7 +18,10 @@ function rate_to_proportion(r::Float64,t::Float64)
 end;
 
 # Model function
-function init_model(β :: Float64, c :: Float64, γ :: Float64, N :: Int64, I0 :: Int64)
+function init_model(model_params:: Vector{Float64}, N :: Int64, I0 :: Int64)
+    β = model_params[1]
+    c = model_params[2]
+    γ = model_params[3]
     properties = @dict(β,c,γ)
     model = ABM(Student; properties=properties)
     for i in 1 : N
@@ -83,9 +86,15 @@ function resample_stratified(weights)
     end
     return indexes
 end
+#infected(x) = count(i == :I for i in x)
 
+
+#infected(a) = a.status == :I
+infected(m) = count(a.status == :I for a in allagents(m))
 function measure(x)
-    return modelCounts(x)[3]
+    num_infec = infected(x);
+    return num_infec
+    #return modelCounts(x)[3]
 end
 
 function pf_init(inits, g, N, y, R)
@@ -103,7 +112,8 @@ end
 function pf(inits, g, log_w, N, y, R)
 
     wn = zeros(N);
-    jnits = [init_model(β, c, γ, N, 1) for n in 1:P]
+    in_vec_1 = [β; c; γ]
+    jnits = [init_model(in_vec_1, N, 1) for n in 1:P]
     y_pf = zeros(Int64,N);
 
     wn = exp.(log_w .- maximum(log_w));
@@ -202,8 +212,8 @@ R = Matrix{Float64}(undef,1,1);
 R[1,1] = 0.1;
 
 P = 50;
-
-templates = [init_model(β, c, γ, N, 1) for n in 1:P]
+input_vec = [β; c; γ]
+templates = [init_model(input_vec, N, 1) for n in 1:P]
 
 @time predicted = particleFilter(templates, measure, P, actuals, R);
 
@@ -227,36 +237,35 @@ end
 
 # Should prior_sample and log_prior_pdf be paramaters and passed into
 # pmh rather than being global?
-function pmh(g, P, N, K, μ, var, actuals, R)
+function pmh(g, P, N, K, μ, var, actuals, R,num_params, theta)
     # This need generalising - in this case we have 3 parameters but
     # we should handle any number
-    theta               = zeros(3, K);
     prop_acc            = zeros(K);
     log_likelihood_curr = -Inf;
 
     # FIXME: Is this really needed now we are using the technique
     # here:
     # https://github.com/compops/pmh-tutorial/blob/master/matlab/particleFilter.m#L47
-    while log_likelihood_curr == -Inf
-        theta[:, 1] = prior_sample(μ, var);
-        β = theta[1, 1];
-        c = theta[2, 1];
-        γ = theta[3, 1];
-
-        inits = [init_model(β, c, γ, N, 1) for n in 1:P];
-        predicted, log_likelihood_curr = particleFilter(inits, g, P, actuals, R);
-    end
+    # while log_likelihood_curr == -Inf
+    #     theta[:, 1] = prior_sample(μ, var);
+    #     β = theta[1, 1];
+    #     c = theta[2, 1];
+    #     γ = theta[3, 1];
+    #
+    #     inits = [init_model(β, c, γ, N, 1) for n in 1:P];
+    #     predicted, log_likelihood_curr = particleFilter(inits, g, P, actuals, R);
+    # end
 
     log_prior_curr = log_prior_pdf(theta[:, 1], μ, var);
 
     for k = 2:K
         theta_prop  = prior_sample(theta[:, k - 1], var);
         theta[:, k] = theta_prop;
-        β = theta[1, k];
-        c = theta[2, k];
-        γ = theta[3, k];
+        # β = theta[1, k];
+        # c = theta[2, k];
+        # γ = theta[3, k];
 
-        inits = [init_model(β, c, γ, N, 1) for n in 1:P];
+        inits = [init_model(theta[:,k], N, 1) for n in 1:P];
         predicted, log_likelihood_prop = particleFilter(inits, g, P, actuals, R);
         log_likelihood_diff = log_likelihood_prop - log_likelihood_curr;
 
@@ -282,20 +291,28 @@ function pmh(g, P, N, K, μ, var, actuals, R)
         print(" Current posterior mean: ", mean(theta[:, 1:k], dims = 2), "\n");
         print(" Current acceptance: ", mean(prop_acc[1:k]), "\n");
         print("#####################################################################\n");
+
+
     end
 end
 
 Random.seed!(1234);
 
 K = 100
-pmh(measure, P, N, K, μ, var, actuals, R)
+num_params = 3;
+theta = zeros(num_params, K);
+theta[:, 1] = prior_sample(μ, var);
+
+
+pmh(measure, P, N, K, μ, var, actuals, R, num_params, theta)
 
 Random.seed!(1234);
 
 # This mean of the posterior was used
 (β, c, γ) = [0.14455132434154833; 9.617284697797249; 0.4849730067859164]
 
-templates = [init_model(β, c, γ, N, 1) for n in 1:P]
+mean_input = [β; c; γ]
+templates = [init_model(mean_input, N, 1) for n in 1:P]
 
 @time predicted_posterior = particleFilter(templates, measure, P, actuals, R);
 
