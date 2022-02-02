@@ -167,15 +167,15 @@ end
  koala(a) = a.type == :koala
  eucalyptus(a) = a.type == :eucalyptus
 
- koala_death_rate = 0.001 #death rate of koala agents
- eucalyptus_production_rate = 0.08 #production rate of eucalyptus
- eucalyptus_consume_rate = 0.008 #death/consumption rate of eucalyptus
+ koala_death_rate = 0.0025 #death rate of koala agents
+ eucalyptus_production_rate = 0.008 #production rate of eucalyptus
+ eucalyptus_consume_rate = 0.02 #death/consumption rate of eucalyptus
 
  ABM_params = [koala_death_rate;eucalyptus_production_rate;eucalyptus_consume_rate]
 
 #running model with 2000 time steps
  model = initialize_model(input_params = ABM_params)
- n_steps = 2000
+ n_steps = 500
  adata = [(koala, count), (eucalyptus, count)]
  adf, _ = run!(model, agent_step!, dummystep, n_steps; adata)
 
@@ -198,7 +198,7 @@ end
 
  for i in 2:100
      model_2 = initialize_model(input_params = ABM_params)
-     n_step = 2000;
+     n_step = 500;
      agent_df_2, _ = run!(model_2, agent_step!, dummystep,n_step; adata);
      a_1 = agent_df_2[:,2];
      a_2 = agent_df_2[:,3];
@@ -219,9 +219,10 @@ end
  std_of_50_e = std(a_euca, dims = 2)
 
 
+
 #all plots
- Plots.plot(adf.step, a_koalas[:,1],  label = "", title = "ABM populations from 100 runs",xlab="Time step",ylabel="Number", linecolor = :red, titlefontsize = 8)
- Plots.plot!(adf.step, a_euca[:,1], label = "",xlab="Time step",ylabel="Number", linecolor = :blue)
+ Plots.plot(adf.step, a_koalas[:,1],  label = "", title = "ABM populations from 100 runs",xlab="Time step",ylabel="Population", linecolor = :red, titlefontsize = 10)
+ Plots.plot!(adf.step, a_euca[:,1], label = "",xlab="Time step",ylabel="Population", linecolor = :blue)
  for i in 2:(size(a_koalas)[2]-1)
      #Plots.plot!(t, a_50[:,i])#, seriestype = :scatter)
      Plots.plot!(adf.step, a_koalas[:,i], linecolor = :red, label = "")
@@ -230,15 +231,15 @@ end
  end
  #Plots.plot!(t,a_50[:,50])#, seriestype = :scatter)
  Plots.plot!(adf.step, a_koalas[:,size(a_koalas)[2]], label = "Koala", linecolor = :red)
- Plots.plot!(adf.step, a_euca[:,size(a_koalas)[2]],label = "Eucalyptus", linecolor = :blue, legend = :right, legendfontsize = 6)
+ Plots.plot!(adf.step, a_euca[:,size(a_koalas)[2]],label = "Eucalyptus", linecolor = :blue, legend = :topleft, legendfontsize = 6)
 #
- Plots.plot!(adf.step, mean_of_50, label = "Mean (Koalas)", lw = 3, linecolor = :black)
- Plots.plot!(adf.step, 2*std_of_50 + mean_of_50, label = "2+ std (Koalas)", lw = 3, linecolor = :black, linestyle = :dash )
- Plots.plot!(adf.step, abs.(mean_of_50 - 2*std_of_50) , label = "2- std(Koalas)", lw = 3.5, linecolor = :black, linestyle = :dot )
+#  Plots.plot!(adf.step, mean_of_50, label = "Mean (Koalas)", lw = 3, linecolor = :black)
+#  Plots.plot!(adf.step, 2*std_of_50 + mean_of_50, label = "2+ std (Koalas)", lw = 3, linecolor = :black, linestyle = :dash )
+#  Plots.plot!(adf.step, abs.(mean_of_50 - 2*std_of_50) , label = "2- std(Koalas)", lw = 3.5, linecolor = :black, linestyle = :dot )
 
- Plots.plot!(adf.step, mean_of_50_e, label = "Mean (Euca.)", lw = 3, linecolor = :green1)
- Plots.plot!(adf.step, 2*std_of_50_e + mean_of_50_e, label = "2+ std (Euca.)", lw = 3,linecolor = :green1, linestyle = :dash)
- Plots.plot!(adf.step, abs.(mean_of_50_e - 2*std_of_50_e) , label = "2- std(Euca.)", lw = 3.5,linecolor = :green1, linestyle = :dot)
+#  Plots.plot!(adf.step, mean_of_50_e, label = "Mean (Euca.)", lw = 3, linecolor = :green1)
+#  Plots.plot!(adf.step, 2*std_of_50_e + mean_of_50_e, label = "2+ std (Euca.)", lw = 3,linecolor = :green1, linestyle = :dash)
+#  Plots.plot!(adf.step, abs.(mean_of_50_e - 2*std_of_50_e) , label = "2- std(Euca.)", lw = 3.5,linecolor = :green1, linestyle = :dot)
 
 
 

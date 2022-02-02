@@ -82,6 +82,16 @@ koalas(m) = count(a.type == :koala for a in allagents(m))
         end
     end
 
+        #if there are no koala agents in simulation, then
+    #based on the eucalyptus consumption rate, add a koala agent to sim
+    if num_koalas == 0
+        if rand() < model.euca_cr
+            id = nextid(model)
+            k_new = Koala(id,(1, 1), model.koala_dr, 0,0)
+            add_agent_single!(k_new, model)
+        end
+    end
+
 
 
  end
