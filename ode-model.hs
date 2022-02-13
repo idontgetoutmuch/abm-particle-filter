@@ -2,6 +2,7 @@
 {-# LANGUAGE OverloadedLists     #-}
 {-# LANGUAGE NumDecimals         #-}
 {-# LANGUAGE ViewPatterns        #-}
+{-# LANGUAGE BangPatterns        #-}
 
 {-# OPTIONS_GHC -Wall #-}
 
@@ -17,6 +18,9 @@ import           Control.Exception
 import           Katip.Monadic
 import qualified Data.Vector as V
 import qualified Data.Vector.Storable as VS
+import           Data.List (unfoldr, mapAccumL)
+import           System.Random
+import           Data.Bits (shiftR)
 
 
 myOptions :: EncodeOptions
@@ -95,3 +99,26 @@ sir s' i' r' beta' c' gamma' = emptyOdeProblem
     initS = realToFrac s'
     initI = realToFrac i'
     initR     = realToFrac r'
+
+indices :: V.Vector Double -> V.Vector Double -> V.Vector Int
+indices bs xs = V.map (binarySearch bs) xs
+
+binarySearch :: (Ord a) =>
+                V.Vector a -> a -> Int
+binarySearch vec x = loop 0 (V.length vec - 1)
+  where
+    loop !l !u
+      | u <= l    = l
+      | otherwise = let e = vec V.! k in if x <= e then loop l k else loop (k+1) u
+      where k = l + (u - l) `shiftR` 1
+
+resampleStratified :: [Double] -> [Int]
+resampleStratified weights = V.toList is
+  where
+    bigN      = length weights
+    positions = map (/ (fromIntegral bigN)) $
+                zipWith (+) (take bigN . unfoldr (Just . uniformR (0.0, 1.0)) $ mkStdGen 23)
+                            (map fromIntegral [0 .. bigN - 1])
+
+    cumulativeSum = scanl (+) 0.0 weights
+    is            = indices (V.fromList cumulativeSum) (V.fromList positions)
