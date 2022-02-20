@@ -21,6 +21,8 @@ import qualified Data.Vector as V
 import qualified Data.Vector.Storable as VS
 import           Data.List (unfoldr)
 import           System.Random
+import           System.Random.Stateful (runStateGen_, IOGenM, newIOGenM)
+
 import           Data.Maybe (catMaybes)
 
 import           Data.Random.Distribution.Normal
@@ -31,6 +33,8 @@ import           Distribution.Utils.MapAccum
 import qualified Language.R as R
 import           Language.R.QQ
 
+newStdGenM :: IO (IOGenM StdGen)
+newStdGenM = newIOGenM =<< newStdGen
 
 myOptions :: EncodeOptions
 myOptions = defaultEncodeOptions {
@@ -46,10 +50,10 @@ sol sir ps ts = do
 f :: SirParams -> SirState -> IO SirState
 f ps qs = do
   m <- sol sir (Sir qs ps) [0.0, 1.0]
-  newS <- undefined -- fmap exp $ R.sample $ R.rvar (Normal (log (m!1!0)) 0.1)
-  newI <- undefined -- fmap exp $ R.sample $ R.rvar (Normal (log (m!1!1)) 0.1)
-  newR <- undefined -- fmap exp $ R.sample $ R.rvar (Normal (log (m!1!2)) 0.1)
-  return (SirState newS newI newR)
+  let newS = runStateGen_ (mkStdGen 42) $ R.runRVar (normal (log (m!1!0)) 0.01)
+      newI = runStateGen_ (mkStdGen 42) $ R.runRVar (normal (log (m!1!1)) 0.01)
+      newR = runStateGen_ (mkStdGen 42) $ R.runRVar (normal (log (m!1!2)) 0.01)
+  return (SirState (exp newS) (exp newI) (exp newR))
 
 newtype Observed = Observed { observed :: Double } deriving (Eq, Show)
 
