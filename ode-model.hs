@@ -7,13 +7,10 @@
 
 {-# OPTIONS_GHC -Wall #-}
 
-module Main (main) where
+module OdeModel (main, test) where
 
 import           Numeric.Sundials
 import           Numeric.LinearAlgebra
-import           Data.Csv
-import           Data.Char
-import           Data.ByteString.Lazy (writeFile)
 import           Prelude hiding (putStr, writeFile)
 import           Control.Exception
 import           Katip.Monadic
@@ -21,34 +18,31 @@ import qualified Data.Vector as V
 import qualified Data.Vector.Storable as VS
 import           Data.List (unfoldr)
 import           System.Random
-import           System.Random.Stateful (runStateGen_, IOGenM, newIOGenM)
+import           System.Random.Stateful (runStateGen_)
 
 import           Data.Maybe (catMaybes)
 
 import           Data.Random.Distribution.Normal
 import qualified Data.Random as R
-import           Data.Traversable
 import           Distribution.Utils.MapAccum
 
 import qualified Language.R as R
-import           Language.R.QQ
+import qualified Language.R.QQ as R
+import           Control.Monad.Trans (liftIO)
+import           Control.Monad.IO.Class (MonadIO)
+import           Control.Monad (foldM)
 
-newStdGenM :: IO (IOGenM StdGen)
-newStdGenM = newIOGenM =<< newStdGen
 
-myOptions :: EncodeOptions
-myOptions = defaultEncodeOptions {
-      encDelimiter = fromIntegral (ord ' ')
-    }
-
-sol sir ps ts = do
-  x <- runNoLoggingT $ solve (defaultOpts $ ARKMethod SDIRK_5_3_4) (sir ts ps)
+sol :: MonadIO m =>
+       (a -> b -> OdeProblem) -> b -> a -> m (Matrix Double)
+sol s ps ts = do
+  x <- runNoLoggingT $ solve (defaultOpts $ ARKMethod SDIRK_5_3_4) (s ts ps)
   case x of
     Left e  -> error $ show e
     Right y -> return (solutionMatrix y)
 
-f :: SirParams -> SirState -> IO SirState
-f ps qs = do
+topF :: SirParams -> SirState -> IO SirState
+topF ps qs = do
   m <- sol sir (Sir qs ps) [0.0, 1.0]
   let newS = runStateGen_ (mkStdGen 42) $ R.runRVar (normal (log (m!1!0)) 0.01)
       newI = runStateGen_ (mkStdGen 42) $ R.runRVar (normal (log (m!1!1)) 0.01)
@@ -57,11 +51,11 @@ f ps qs = do
 
 newtype Observed = Observed { observed :: Double } deriving (Eq, Show)
 
-g :: SirState -> Observed
-g = Observed . sirStateI
+topG :: SirState -> Observed
+topG = Observed . sirStateI
 
-d :: Observed -> Observed -> Double
-d x y = R.logPdf (Normal 0.0 (observed x)) (observed y)
+topD :: Observed -> Observed -> Double
+topD x y = R.logPdf (Normal 0.0 (observed x)) (observed y)
 
 -- main :: IO ()
 -- main = do
@@ -144,19 +138,19 @@ sir ts ps = emptyOdeProblem
     initR = realToFrac (sirStateR $ sirS ps)
 
 resampleStratified :: (UniformRange d, Ord d, Fractional d) => [d] -> [Int]
-resampleStratified weights = catMaybes $ unfoldr f (0, 0)
+resampleStratified weights = catMaybes $ unfoldr coalg (0, 0)
   where
     bigN      = length weights
     positions = map (/ (fromIntegral bigN)) $
                 zipWith (+) (take bigN . unfoldr (Just . uniformR (0.0, 1.0)) $ mkStdGen 23)
                             (map fromIntegral [0 .. bigN - 1])
     cumulativeSum = scanl (+) 0.0 weights
-    f (i, j) | i < bigN =
-                 if (positions!!i) < (cumulativeSum!!j)
-                 then Just (Just j, (i + 1, j))
-                 else Just (Nothing, (i, j + 1))
-             | otherwise =
-                 Nothing
+    coalg (i, j) | i < bigN =
+                     if (positions!!i) < (cumulativeSum!!j)
+                     then Just (Just j, (i + 1, j))
+                     else Just (Nothing, (i, j + 1))
+                 | otherwise =
+                     Nothing
 
 type Particles a = [a]
 
@@ -200,27 +194,40 @@ initWeights :: Particles Double
 initWeights = [ recip (fromIntegral nParticles) | _ <- [1 .. nParticles]]
 
 test :: Observed -> IO (Particles Observed, [Double], Double, Particles SirState)
-test = pf initParticles (f $ SirParams 0.2 10.0 0.5) g d initWeights
+test = pf initParticles (topF $ SirParams 0.2 10.0 0.5) topG topD initWeights
 
 f' :: (Particles SirState, Particles Double, Double) ->
       Observed ->
       IO ((Particles SirState, [Double], Double), Double)
-f' (initParticles, initWeights, logLikelihood) x = do
-  (obs, logWeights, predictiveLikelihood, ps) <- pf initParticles (f $ SirParams 0.2 10.0 0.5) g d initWeights x
+f' (is, iws, logLikelihood) x = do
+  (obs, logWeights, predictiveLikelihood, ps) <- pf is (topF $ SirParams 0.2 10.0 0.5) topG topD iws x
   return ((ps, logWeights, logLikelihood + predictiveLikelihood), (sum $ map observed obs) / (fromIntegral $ length obs))
 
 actuals :: [Double]
-actuals = [1, 3, 8, 28, 76, 222, 293, 257, 237, 192, 126, 70, 28, 12, 5];
+actuals = [1, 3, 8, 28, 76, 222, 293, 257, 237, 192, 126, 70, 28, 12, 5]
+
+us :: [Double]
+us = map fromIntegral [1 .. length actuals]
 
 predicteds :: IO [Double]
-predicteds = fmap snd $ mapAccumM f' (initParticles, initWeights, 0.0) (map Observed actuals)
+predicteds = do
+  ps <- fmap snd $ mapAccumM f' (initParticles, initWeights, 0.0) (map Observed actuals)
+  return $ 1.0 : (take (length actuals - 1) ps)
 
 main :: IO ()
 main = do
   R.runRegion $ do
-    [r| library(ggplot2) |]
-    [r| data("midwest", package = "ggplot2") |]
-    [r| ggplot(midwest, aes(x=area, y=poptotal)) + geom_point() |]
-    [r| ggsave("midwest.pdf") |]
+    _  <- [R.r| library(ggplot2) |]
+    ps <- liftIO $ predicteds
+    p0 <- [R.r| ggplot() |]
+    pN <- foldM
+      (\m f -> do df <- [R.r| data.frame(x = f_hs, t = us_hs) |]
+                  [R.r| m_hs +
+                        geom_line(data = df_hs,
+                                  aes(x = t, y = x)) |]) p0 ([actuals, ps] :: [[Double]])
+    _ <- [R.r| png(filename="diagrams/kingston.png") |]
+    _ <- [R.r| print(pN_hs) |]
+    _ <- [R.r| dev.off() |]
     return ()
   return ()
+

@@ -113,6 +113,7 @@ let
     random-fu
     Cabal
     (pkgs.haskell.lib.dontCheck inline-r)
+    mtl
   ];
 
   environment.systemPackages = with pkgs; [ julia_17-bin ];
