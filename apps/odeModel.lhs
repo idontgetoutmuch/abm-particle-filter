@@ -1,8 +1,6 @@
 ---
 title: "Particle Filtering for Agent Based Models"
 bibliography: references.bib
-output: pdf_document
-toc: true
 ---
 
 Introduction
@@ -21,6 +19,14 @@ parameters: one describing how infectious the pathogen is, one
 describing how much contact a host has with other hosts and one
 describing how quickly a host recovers.
 
+$$
+\begin{aligned}
+\frac{d S}{d t} &=-\beta S \frac{I}{N} \\
+\frac{d I}{d t} &=\beta S \frac{I}{N}-\gamma I \\
+\frac{d R}{d t} &=\gamma I
+\end{aligned}
+$$
+
 In order to estimate these parameters, we can assume that they come
 from prior distribution suggested by the literature and ideally then
 use a standard Markov Chain Monte Carlo (MCMC) technique to sample
@@ -37,13 +43,8 @@ likelihoods as in standard MCMC in order to run the chain.
 Preliminary results have given a very good fit against observed data
 of an influenza outbreak in a boarding school in the UK.
 
-$$
-\begin{aligned}
-\frac{d S}{d t} &=-\beta S \frac{I}{N} \\
-\frac{d I}{d t} &=\beta S \frac{I}{N}-\gamma I \\
-\frac{d R}{d t} &=\gamma I
-\end{aligned}
-$$
+A Deterministic Haskell Model
+-----------------------------
 
 First let us set the necessary Haskell extensions and import the
 required modules.
@@ -56,22 +57,24 @@ required modules.
 > {-# LANGUAGE BangPatterns        #-}
 > {-# LANGUAGE QuasiQuotes         #-}
 
-> {-# OPTIONS_GHC -Wall            #-}
+> {-# OPTIONS_GHC -Wall              #-}
+> {-# OPTIONS_GHC -Wno-type-defaults #-}
 
-> module OdeModel (main, test, testGen) where
+> module Main (
+> main,
+> test,
+> testGen,
+> chartModelActuals
+> ) where
 
 > import           Numeric.Sundials
 > import           Numeric.LinearAlgebra
 > import           Prelude hiding (putStr, writeFile)
-> import           Control.Exception
 > import           Katip.Monadic
-> import qualified Data.Vector as V
 > import qualified Data.Vector.Storable as VS
-> import           Data.List (unfoldr, transpose)
+> import           Data.List (transpose)
 > import           System.Random
 > import           System.Random.Stateful (IOGenM, newIOGenM)
-
-> import           Data.Maybe (catMaybes)
 
 > import           Data.Random.Distribution.Normal
 > import qualified Data.Random as R
@@ -109,16 +112,11 @@ single parameter $\alpha = c\beta$).
 >   } deriving (Eq, Show)
 
 
-Define the actual ODE problem itself
+Define the actual ODE problem itself (FIXME: we can hide a lot more of the unnecessary details)
 
 > sir :: Vector Double -> Sir -> OdeProblem
 > sir ts ps = emptyOdeProblem
->   { odeRhs = odeRhsPure $ \_ (VS.toList -> [s, i, r]) ->
->       let n = s + i + r in
->         [ -beta * c * i / n * s
->         , beta * c * i / n * s - gamma * i
->         , gamma * i
->         ]
+>   { odeRhs = odeRhsPure f
 >   , odeJacobian = Nothing
 >   , odeInitCond = [initS, initI, initR]
 >   , odeEventHandler = nilEventHandler
@@ -127,13 +125,20 @@ Define the actual ODE problem itself
 >   , odeTolerances = defaultTolerances
 >   }
 >   where
+>     f _ (VS.toList -> [s, i, r]) =
+>       let n = s + i + r in
+>         [ -beta * c * i / n * s
+>         , beta * c * i / n * s - gamma * i
+>         , gamma * i
+>         ]
+>     f _ _ = error $ "Incorrect number of parameters"
+>
 >     beta  = realToFrac (sirParamsBeta  $ sirP ps)
 >     c     = realToFrac (sirParamsC     $ sirP ps)
 >     gamma = realToFrac (sirParamsGamma $ sirP ps)
 >     initS = realToFrac (sirStateS $ sirS ps)
 >     initI = realToFrac (sirStateI $ sirS ps)
 >     initR = realToFrac (sirStateR $ sirS ps)
-
 
 > sol :: MonadIO m =>
 >        (a -> b -> OdeProblem) -> b -> a -> m (Matrix Double)
@@ -154,8 +159,19 @@ We can now run the model and compare its output to the actuals.
 >   let n = tr m
 >   return $ toList (n!1)
 
-
 ![](diagrams/modelActuals.png)
+
+FIXME: Sadly this does not work and I would rather write the draft
+first and then fight with BlogLiterately.
+
+    [ghci]
+    import Data.List
+    :t transpose
+    import Data.PMMH
+    :t pf
+
+We see that e.g. on day our model predicts 93 students in the sick bay
+while in fact there are 192 students there.
 
 > newStdGenM :: IO (IOGenM StdGen)
 > newStdGenM = newIOGenM =<< newStdGen
@@ -183,38 +199,6 @@ We can now run the model and compare its output to the actuals.
 > topD :: Observed -> Observed -> Double
 > topD x y = R.logPdf (Normal (observed x) 0.1) (observed y)
 
-> type Particles a = [a]
-
-> pf :: forall m a b d g . (Monad m, Floating d, Ord d, UniformRange d) =>
->       g ->
->       Particles a ->
->       (g -> a -> m a) ->
->       (a -> b) ->
->       (b -> b -> d) ->
->       Particles d ->
->       b ->
->       m (Particles b, [d], d, Particles a)
-> pf gen statePrev f g d log_w y = do
-
->   let bigN = length log_w
->       wn   = map exp (zipWith (-) log_w (replicate bigN (maximum log_w)))
->       swn  = sum wn
->       wn'  = map (/ swn) wn
-
->   let b              = resampleStratified wn'
->       a              = map (\i -> i - 1) b
->       stateResampled = map (\i -> statePrev!!(a!!i)) [0 .. bigN - 1]
-
->   statePredicted <- mapM (f gen) stateResampled
-
->   let obsPredicted         = map g statePredicted
->       ds                   = map (d y) obsPredicted
->       maxWeight            = maximum ds
->       wm                   = map exp (zipWith (-) ds (replicate bigN maxWeight))
->       swm                  = sum wm
->       predictiveLikelihood = maxWeight + log swm - log (fromIntegral bigN)
-
->   return (obsPredicted, ds, predictiveLikelihood, statePredicted)
 
 > nParticles :: Int
 > nParticles = 50
@@ -236,8 +220,8 @@ We can now run the model and compare its output to the actuals.
 >       (Particles SirState, Particles Double, Double) ->
 >       Observed ->
 >       IO ((Particles SirState, [Double], Double), (Double, Particles SirState))
-> f' gen (is, iws, logLikelihood) x = do
->   (obs, logWeights, predictiveLikelihood, ps) <- pf gen is (topF (SirParams 0.2 10.0 0.5)) topG topD iws x
+> f' genn (is, iws, logLikelihood) x = do
+>   (obs, logWeights, predictiveLikelihood, ps) <- pf genn is (topF (SirParams 0.2 10.0 0.5)) topG topD iws x
 >   return ((ps, logWeights, logLikelihood + predictiveLikelihood), ((sum $ map observed obs) / (fromIntegral $ length obs), ps))
 
 > actuals :: [Double]
@@ -256,19 +240,19 @@ We can now run the model and compare its output to the actuals.
 >   return (1.0 : (take (length actuals - 1) (map fst $ snd ps)),
 >           initParticles : (map snd $ snd ps))
 
-> gen :: SirState -> IO SirState
-> gen s = do
->   setStdGen (mkStdGen 43)
->   stdGen <- newStdGenM
->   topF (SirParams 0.2 10.0 0.5) stdGen s
+> -- gen :: SirState -> IO SirState
+> -- gen s = do
+> --   setStdGen (mkStdGen 43)
+> --   stdGen <- newStdGenM
+> --   topF (SirParams 0.2 10.0 0.5) stdGen s
 
 > -- foo :: IO ()
 > -- foo = do
 > --   (x, xs) <- mapAccumM (\s _ -> do t <- gen s; return (t, s)) (SirState 762 1 0) [1 .. 14]
 > --   return ()
 
-> foo :: IO (SirState, [SirState])
-> foo = mapAccumM (\s _ -> do t <- gen s; return (t, s)) (SirState 762 1 0) [1..14]
+> -- foo :: IO (SirState, [SirState])
+> -- foo = mapAccumM (\s _ -> do t <- gen s; return (t, s)) (SirState 762 1 0) [1..14]
 
 FIXME: Where should this code live?
 -----------------------------------
@@ -284,9 +268,9 @@ FIXME: Where should this code live?
 >     df <- [R.r| data.frame(x = actuals1_hs, t = us_hs) |]
 >     p1 <-  [R.r| p0_hs + geom_line(data = df_hs, aes(x = t, y = x), colour="blue") |]
 >     pN <- foldM
->       (\m f -> do df <- [R.r| data.frame(x = f_hs, t = us_hs) |]
+>       (\m f -> do dg <- [R.r| data.frame(x = f_hs, t = us_hs) |]
 >                   [R.r| m_hs +
->                         geom_line(data = df_hs, linetype = "dotted",
+>                         geom_line(data = dg_hs, linetype = "dotted",
 >                                   aes(x = t, y = x)) |]) p1 ([q] :: [[Double]])
 >     _ <- [R.r| png(filename="diagrams/modelActuals.png") |]
 >     _ <- [R.r| print(pN_hs) |]
@@ -311,9 +295,9 @@ FIXME: Where should this code live?
 >     df <- [R.r| data.frame(x = actuals_hs, t = us_hs) |]
 >     p1 <-  [R.r| p0_hs + geom_line(data = df_hs, aes(x = t, y = x), colour="blue") |]
 >     pN <- foldM
->       (\m f -> do df <- [R.r| data.frame(x = f_hs, t = us_hs) |]
+>       (\m f -> do dg <- [R.r| data.frame(x = f_hs, t = us_hs) |]
 >                   [R.r| m_hs +
->                         geom_line(data = df_hs, linetype = "dotted",
+>                         geom_line(data = dg_hs, linetype = "dotted",
 >                                   aes(x = t, y = x)) |]) p1 (qs :: [[Double]])
 >     _ <- [R.r| png(filename="diagrams/generateds.png") |]
 >     _ <- [R.r| print(pN_hs) |]

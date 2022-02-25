@@ -32,8 +32,10 @@ library
         mtl
 
 executable ode-model
-  main-is:             ode-model.hs
+  main-is:             odeModel.lhs
+  hs-source-dirs:      apps
   build-depends:       base,
+                       abm-particle-filter,
                        hmatrix-sundials,
                        hmatrix,
                        katip,
