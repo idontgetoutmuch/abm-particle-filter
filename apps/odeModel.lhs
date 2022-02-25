@@ -62,8 +62,6 @@ required modules.
 
 > module Main (
 > main,
-> test,
-> testGen,
 > chartModelActuals
 > ) where
 
@@ -171,17 +169,19 @@ first and then fight with BlogLiterately.
     :t pf
 
 We see that e.g. on day our model predicts 93 students in the sick bay
-while in fact there are 192 students there.
+while in fact there are 192 students there. What we would like to do
+is to use the last observation to inform our prediction. First we have
+to generalise our model so that it can be influenced by the data by
+allowing the state to be a general distribution rather than a
+particular value. Once we have done this, we can, using particle
+filtering, approximate the conditional probability measure of the
+state given the observations prior to the state we wish to
+estimate. How this is done more precisely is given in the section
+"Whatever".
 
-> newStdGenM :: IO (IOGenM StdGen)
-> newStdGenM = newIOGenM =<< newStdGen
-
-> testGen :: IO ()
-> testGen = do
->   setStdGen (mkStdGen 43)
->   stdGen <- newStdGenM
->   x <- R.sampleFrom stdGen (normal 10 50) :: IO Double
->   print x
+So here is the generalised model where we add noise to the
+state. N.B. the invariant that the sum of the susceptible, infected
+and recovered remains constant no longer holds.
 
 > topF :: R.StatefulGen a IO => SirParams -> a -> SirState -> IO SirState
 > topF ps gen qs = do
@@ -191,14 +191,41 @@ while in fact there are 192 students there.
 >   newR <- R.sampleFrom gen (normal (log (m!1!2)) 0.05)
 >   return (SirState (exp newS) (exp newI) (exp newR))
 
+Apparently the person recording the outbreak only kept records of how
+many students were sick on any given day. We create a type for the
+daily observation and a function to create this from the state. In
+this case the observation function is particularly simple.
+
 > newtype Observed = Observed { observed :: Double } deriving (Eq, Show)
 
 > topG :: SirState -> Observed
 > topG = Observed . sirStateI
 
+Since the number of infected students under the ODE model is not a
+whole number, we can without too much embarassment make the assumption
+that the probability density function for the observations is normally
+distributed,
+
 > topD :: Observed -> Observed -> Double
 > topD x y = R.logPdf (Normal (observed x) 0.1) (observed y)
 
+Now we can define a function that takes the current set of particles,
+their weights and the loglikelihood (FIXME: of what?) runs the
+particle filter for one time step and returns the new set of
+particles, new weights, the updated loglikelihood and a predicted
+value for the number of inspections.
+
+> f' :: R.StatefulGen a IO =>
+>       a ->
+>       (Particles SirState, Particles Double, Double) ->
+>       Observed ->
+>       IO ((Particles SirState, Particles Double, Double), (Double, Particles SirState))
+> f' gen (is, iws, logLikelihood) x = do
+>   (obs, logWeights, predictiveLikelihood, ps) <- pf gen is (topF (SirParams 0.2 10.0 0.5)) topG topD iws x
+>   return ((ps, logWeights, logLikelihood + predictiveLikelihood), ((sum $ map observed obs) / (fromIntegral $ length obs), ps))
+
+Further we can create some initial values and seed the random number
+generator (FIXME: I don't think this is really seeded).
 
 > nParticles :: Int
 > nParticles = 50
@@ -209,25 +236,10 @@ while in fact there are 192 students there.
 > initWeights :: Particles Double
 > initWeights = [ recip (fromIntegral nParticles) | _ <- [1 .. nParticles]]
 
-> test :: Observed -> IO (Particles Observed, [Double], Double, Particles SirState)
-> test y = do
->   setStdGen (mkStdGen 42)
->   stdGen <- newStdGenM
->   pf stdGen initParticles (topF (SirParams 0.2 10.0 0.5)) topG topD initWeights y
+> newStdGenM :: IO (IOGenM StdGen)
+> newStdGenM = newIOGenM =<< newStdGen
 
-> f' :: R.StatefulGen a IO =>
->       a ->
->       (Particles SirState, Particles Double, Double) ->
->       Observed ->
->       IO ((Particles SirState, [Double], Double), (Double, Particles SirState))
-> f' genn (is, iws, logLikelihood) x = do
->   (obs, logWeights, predictiveLikelihood, ps) <- pf genn is (topF (SirParams 0.2 10.0 0.5)) topG topD iws x
->   return ((ps, logWeights, logLikelihood + predictiveLikelihood), ((sum $ map observed obs) / (fromIntegral $ length obs), ps))
 
-> actuals :: [Double]
-> -- actuals = [1, 3, 8, 28, 76, 222, 293, 257, 237, 192, 126, 70, 28, 12, 5]
-> -- actuals = [1.0, 4.461099660999103,19.2841154009417,72.45523789258175,175.11177555224904,218.27240730172335,178.68233602513604,124.31892226893099,81.41715876767847,51.95377779738168,32.72252088099639,20.455265118630848,12.724763877588158,7.888548271260433,4.877591328134501]
-> actuals = [1.0,4.4494701559948595,19.26061400642119,74.56001404276878,203.53132705452023,303.9377397627315,280.8355063736904,208.44313884379073,141.93376054428182,93.1686710901518,60.09840192926011,38.41317071140943,24.427235248357047,15.487105760394954,9.801362509828854]
 
 > us :: [Double]
 > us = map fromIntegral [1 .. length actuals]
@@ -253,6 +265,13 @@ while in fact there are 192 students there.
 
 > -- foo :: IO (SirState, [SirState])
 > -- foo = mapAccumM (\s _ -> do t <- gen s; return (t, s)) (SirState 762 1 0) [1..14]
+
+> actuals :: [Double]
+> -- actuals = [1, 3, 8, 28, 76, 222, 293, 257, 237, 192, 126, 70, 28, 12, 5]
+> -- actuals = [1.0, 4.461099660999103,19.2841154009417,72.45523789258175,175.11177555224904,218.27240730172335,178.68233602513604,124.31892226893099,81.41715876767847,51.95377779738168,32.72252088099639,20.455265118630848,12.724763877588158,7.888548271260433,4.877591328134501]
+> actuals = [1.0,4.4494701559948595,19.26061400642119,74.56001404276878,203.53132705452023,303.9377397627315,280.8355063736904,208.44313884379073,141.93376054428182,93.1686710901518,60.09840192926011,38.41317071140943,24.427235248357047,15.487105760394954,9.801362509828854]
+
+
 
 FIXME: Where should this code live?
 -----------------------------------
