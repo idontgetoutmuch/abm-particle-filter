@@ -215,7 +215,9 @@ f' gen (is, iws, logLikelihood) x = do
   return ((ps, logWeights, logLikelihood + predictiveLikelihood), ((sum $ map observed obs) / (fromIntegral $ length obs), ps))
 
 actuals :: [Double]
-actuals = [3, 8, 28, 76, 222, 293, 257, 237, 192, 126, 70, 28, 12, 5]
+-- actuals = [1, 3, 8, 28, 76, 222, 293, 257, 237, 192, 126, 70, 28, 12, 5]
+-- actuals = [1.0, 4.461099660999103,19.2841154009417,72.45523789258175,175.11177555224904,218.27240730172335,178.68233602513604,124.31892226893099,81.41715876767847,51.95377779738168,32.72252088099639,20.455265118630848,12.724763877588158,7.888548271260433,4.877591328134501]
+actuals = [1.0,4.4494701559948595,19.26061400642119,74.56001404276878,203.53132705452023,303.9377397627315,280.8355063736904,208.44313884379073,141.93376054428182,93.1686710901518,60.09840192926011,38.41317071140943,24.427235248357047,15.487105760394954,9.801362509828854]
 
 us :: [Double]
 us = map fromIntegral [1 .. length actuals]
@@ -228,8 +230,25 @@ predicteds = do
   return (1.0 : (take (length actuals - 1) (map fst $ snd ps)),
           initParticles : (map snd $ snd ps))
 
+gen :: SirState -> IO SirState
+gen s = do
+  setStdGen (mkStdGen 43)
+  stdGen <- newStdGenM
+  topF (SirParams 0.2 10.0 0.5) stdGen s
+
+-- foo :: IO ()
+-- foo = do
+--   (x, xs) <- mapAccumM (\s _ -> do t <- gen s; return (t, s)) (SirState 762 1 0) [1 .. 14]
+--   return ()
+
+foo :: IO (SirState, [SirState])
+foo = mapAccumM (\s _ -> do t <- gen s; return (t, s)) (SirState 762 1 0) [1..14]
+
 main :: IO ()
 main = do
+  -- (x, xs) <- foo
+  -- let ys = map sirStateI (xs ++ [x])
+  -- print $ ys
   R.runRegion $ do
     _  <- [R.r| library(ggplot2) |]
     ps <- liftIO $ predicteds
@@ -245,10 +264,11 @@ main = do
       (\m f -> do df <- [R.r| data.frame(x = f_hs, t = us_hs) |]
                   [R.r| m_hs +
                         geom_line(data = df_hs, linetype = "dotted",
-                                  aes(x = t, y = x)) |]) p1 ((actuals : qs) :: [[Double]])
-    _ <- [R.r| png(filename="diagrams/kingston.png") |]
+                                  aes(x = t, y = x)) |]) p1 (qs :: [[Double]])
+    _ <- [R.r| png(filename="diagrams/generateds.png") |]
     _ <- [R.r| print(pN_hs) |]
     _ <- [R.r| dev.off() |]
     return ()
   return ()
+
 
