@@ -144,9 +144,6 @@ Define the actual ODE problem itself (FIXME: we can hide a lot more of the unnec
 
 We can now run the model and compare its output to the actuals.
 
-> actuals1 :: [Double]
-> actuals1 = [1, 3, 8, 28, 76, 222, 293, 257, 237, 192, 126, 70, 28, 12, 5]
-
 > testSol :: IO ([Double])
 > testSol = do
 >   m <- sol sir (Sir (SirState 762 1 0) (SirParams 0.2 10.0 0.5)) (vector us)
@@ -166,6 +163,9 @@ first and then fight with BlogLiterately.
     import Data.PMMH
     :t pf
 
+Generalising the Model
+======================
+
 We see that e.g. on day our model predicts 93 students in the sick bay
 while in fact there are 192 students there. What we would like to do
 is to use the last observation to inform our prediction. First we have
@@ -184,9 +184,9 @@ and recovered remains constant no longer holds.
 > topF :: R.StatefulGen a IO => SirParams -> a -> SirState -> IO SirState
 > topF ps gen qs = do
 >   m <- sol sir (Sir qs ps) [0.0, 1.0]
->   newS <- R.sampleFrom gen (normal (log (m!1!0)) 0.05)
->   newI <- R.sampleFrom gen (normal (log (m!1!1)) 0.05)
->   newR <- R.sampleFrom gen (normal (log (m!1!2)) 0.05)
+>   newS <- R.sampleFrom gen (normal (log (m!1!0)) 0.1)
+>   newI <- R.sampleFrom gen (normal (log (m!1!1)) 0.1)
+>   newR <- R.sampleFrom gen (normal (log (m!1!2)) 0.1)
 >   return (SirState (exp newS) (exp newI) (exp newR))
 
 Apparently the person recording the outbreak only kept records of how
@@ -198,6 +198,9 @@ this case the observation function is particularly simple.
 
 > topG :: SirState -> Observed
 > topG = Observed . sirStateI
+
+Particle Filtering in Practice
+=============================
 
 Since the number of infected students under the ODE model is not a
 whole number, we can without too much embarassment make the assumption
@@ -237,55 +240,45 @@ generator (FIXME: I don't think this is really seeded).
 > newStdGenM :: IO (IOGenM StdGen)
 > newStdGenM = newIOGenM =<< newStdGen
 
-
-
 > us :: [Double]
 > us = map fromIntegral [1 .. length actuals]
 
-> predicteds :: IO ([Double], [Particles SirState])
-> predicteds = do
+> predicteds :: [Double] -> IO ([Double], [Particles SirState])
+> predicteds as = do
 >   setStdGen (mkStdGen 42)
 >   stdGen <- newStdGenM
->   ps <- mapAccumM (f' stdGen) (initParticles, initWeights, 0.0) (map Observed $ drop 1 actuals)
+>   ps <- mapAccumM (f' stdGen) (initParticles, initWeights, 0.0) (map Observed $ drop 1 as)
 >   return (1.0 : (take (length actuals - 1) (map fst $ snd ps)),
 >           initParticles : (map snd $ snd ps))
 
-> -- gen :: SirState -> IO SirState
-> -- gen s = do
-> --   setStdGen (mkStdGen 43)
-> --   stdGen <- newStdGenM
-> --   topF (SirParams 0.2 10.0 0.5) stdGen s
-
-> -- foo :: IO ()
-> -- foo = do
-> --   (x, xs) <- mapAccumM (\s _ -> do t <- gen s; return (t, s)) (SirState 762 1 0) [1 .. 14]
-> --   return ()
-
-> -- foo :: IO (SirState, [SirState])
-> -- foo = mapAccumM (\s _ -> do t <- gen s; return (t, s)) (SirState 762 1 0) [1..14]
-
 > actuals :: [Double]
-> -- actuals = [1, 3, 8, 28, 76, 222, 293, 257, 237, 192, 126, 70, 28, 12, 5]
-> -- actuals = [1.0, 4.461099660999103,19.2841154009417,72.45523789258175,175.11177555224904,218.27240730172335,178.68233602513604,124.31892226893099,81.41715876767847,51.95377779738168,32.72252088099639,20.455265118630848,12.724763877588158,7.888548271260433,4.877591328134501]
-> actuals = [1.0,4.4494701559948595,19.26061400642119,74.56001404276878,203.53132705452023,303.9377397627315,280.8355063736904,208.44313884379073,141.93376054428182,93.1686710901518,60.09840192926011,38.41317071140943,24.427235248357047,15.487105760394954,9.801362509828854]
+> actuals = [1, 3, 8, 28, 76, 222, 293, 257, 237, 192, 126, 70, 28, 12, 5]
 
-FIXME: Where should this code live?
------------------------------------
+We can finally run the model against the data and plot the results.
 
 > main :: IO ()
 > main = do
 >   q <- testSol
->   print q
->   print actuals1
->   chart (zip us actuals1) [q] "diagrams/modelActuals.png"
-
->   ps <- predicteds
+>   chart (zip us actuals) [q] "diagrams/modelActuals.png"
+>   ps <- predicteds q
 >   let qs :: [[Double]]
->       qs = map (take 15) $ transpose $ map (map sirStateI) $ snd ps
->   print (length qs)
->   print (length $ head qs)
->   print (length us)
->   chart (zip us actuals) qs "diagrams/generateds.png"
+>       qs = transpose $ map (map sirStateI) $ snd ps
+>   chart (zip us q) [fst ps] "diagrams/predicteds.png"
+>   chart (zip us q) qs "diagrams/generateds.png"
+
+![](diagrams/predicteds.png)
+
+![](diagrams/generateds.png)
+
+Estimating the Paramaters via MCMC
+==================================
+
+This is all find and dandy but we have assumed that we know the
+infection rate and recovery rate parameters. In reality we don't know
+these. We could use Markov Chain Monte Carlo (or Hamiltonian Monte
+Carlo) using the deterministic SIR model. FIXME: we could use the Stan
+example to draw some pictures but for Agent Based Models, this is
+rarely available.
 
 Markov Process and Chains
 =========================

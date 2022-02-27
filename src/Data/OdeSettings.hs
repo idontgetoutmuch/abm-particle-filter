@@ -1,4 +1,7 @@
-{-# LANGUAGE NumDecimals         #-}
+|{-# LANGUAGE NumDecimals         #-}
+
+{-# OPTIONS_GHC -Wall              #-}
+{-# OPTIONS_GHC -Wno-type-defaults #-}
 
 module Data.OdeSettings (
     defaultOpts

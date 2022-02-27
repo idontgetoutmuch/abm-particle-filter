@@ -1,5 +1,8 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
+{-# OPTIONS_GHC -Wall              #-}
+{-# OPTIONS_GHC -Wno-type-defaults #-}
+
 module Data.PMMH (
     resampleStratified
   , pf
@@ -9,6 +12,7 @@ module Data.PMMH (
 import           System.Random
 import           Data.Maybe (catMaybes)
 import           Data.List (unfoldr)
+
 
 resampleStratified :: (UniformRange d, Ord d, Fractional d) => [d] -> [Int]
 resampleStratified weights = catMaybes $ unfoldr coalg (0, 0)
