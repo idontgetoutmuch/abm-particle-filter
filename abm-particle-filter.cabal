@@ -13,23 +13,25 @@ library
     exposed-modules:
         Data.PMMH
         Data.OdeSettings
+        Data.Chart
 
     hs-source-dirs:   src
     other-modules:
     default-language: Haskell2010
     build-depends:
         base,
+        bytestring,
+        Cabal,
+        filepath,
         hmatrix-sundials,
         hmatrix,
-        katip,
-        bytestring,
-        vector,
-        random,
-        QuickCheck,
-        random-fu,
-        Cabal,
         inline-r,
-        mtl
+        katip,
+        mtl,
+        QuickCheck,
+        random,
+        random-fu,
+        vector
 
 executable ode-model
   main-is:             odeModel.lhs

@@ -61,8 +61,7 @@ required modules.
 > {-# OPTIONS_GHC -Wno-type-defaults #-}
 
 > module Main (
-> main,
-> chartModelActuals
+> main
 > ) where
 
 > import           Numeric.Sundials
@@ -78,14 +77,11 @@ required modules.
 > import qualified Data.Random as R
 > import           Distribution.Utils.MapAccum
 
-> import qualified Language.R as R
-> import qualified Language.R.QQ as R
-> import           Control.Monad.Trans (liftIO)
 > import           Control.Monad.IO.Class (MonadIO)
-> import           Control.Monad (foldM)
 >
 > import           Data.PMMH
 > import           Data.OdeSettings
+> import           Data.Chart
 
 Define the state and parameters for the model (FIXME: the infectivity
 rate and the contact rate are always used as $c\beta$ and are thus
@@ -165,6 +161,8 @@ first and then fight with BlogLiterately.
     [ghci]
     import Data.List
     :t transpose
+    import Numeric.LinearAlgebra
+    :t vector
     import Data.PMMH
     :t pf
 
@@ -271,58 +269,23 @@ generator (FIXME: I don't think this is really seeded).
 > -- actuals = [1.0, 4.461099660999103,19.2841154009417,72.45523789258175,175.11177555224904,218.27240730172335,178.68233602513604,124.31892226893099,81.41715876767847,51.95377779738168,32.72252088099639,20.455265118630848,12.724763877588158,7.888548271260433,4.877591328134501]
 > actuals = [1.0,4.4494701559948595,19.26061400642119,74.56001404276878,203.53132705452023,303.9377397627315,280.8355063736904,208.44313884379073,141.93376054428182,93.1686710901518,60.09840192926011,38.41317071140943,24.427235248357047,15.487105760394954,9.801362509828854]
 
-
-
 FIXME: Where should this code live?
 -----------------------------------
 
-> chartModelActuals :: IO ()
-> chartModelActuals = do
->   R.runRegion $ do
->     _  <- [R.r| library(ggplot2) |]
->     q <- liftIO $ testSol
->     liftIO $ print q
->     liftIO $ print actuals1
->     p0 <- [R.r| ggplot() |]
->     df <- [R.r| data.frame(x = actuals1_hs, t = us_hs) |]
->     p1 <-  [R.r| p0_hs + geom_line(data = df_hs, aes(x = t, y = x), colour="blue") |]
->     pN <- foldM
->       (\m f -> do dg <- [R.r| data.frame(x = f_hs, t = us_hs) |]
->                   [R.r| m_hs +
->                         geom_line(data = dg_hs, linetype = "dotted",
->                                   aes(x = t, y = x)) |]) p1 ([q] :: [[Double]])
->     _ <- [R.r| png(filename="diagrams/modelActuals.png") |]
->     _ <- [R.r| print(pN_hs) |]
->     _ <- [R.r| dev.off() |]
->     return ()
->   return ()
-
 > main :: IO ()
 > main = do
->   -- (x, xs) <- foo
->   -- let ys = map sirStateI (xs ++ [x])
->   -- print $ ys
->   R.runRegion $ do
->     _  <- [R.r| library(ggplot2) |]
->     ps <- liftIO $ predicteds
->     let qs :: [[Double]]
->         qs = map (take 15) $ transpose $ map (map sirStateI) $ snd ps
->     liftIO $ print (length qs)
->     liftIO $ print (length $ head qs)
->     liftIO $ print (length us)
->     p0 <- [R.r| ggplot() |]
->     df <- [R.r| data.frame(x = actuals_hs, t = us_hs) |]
->     p1 <-  [R.r| p0_hs + geom_line(data = df_hs, aes(x = t, y = x), colour="blue") |]
->     pN <- foldM
->       (\m f -> do dg <- [R.r| data.frame(x = f_hs, t = us_hs) |]
->                   [R.r| m_hs +
->                         geom_line(data = dg_hs, linetype = "dotted",
->                                   aes(x = t, y = x)) |]) p1 (qs :: [[Double]])
->     _ <- [R.r| png(filename="diagrams/generateds.png") |]
->     _ <- [R.r| print(pN_hs) |]
->     _ <- [R.r| dev.off() |]
->     return ()
->   return ()
+>   q <- testSol
+>   print q
+>   print actuals1
+>   chart (zip us actuals1) [q] "diagrams/modelActuals.png"
+
+>   ps <- predicteds
+>   let qs :: [[Double]]
+>       qs = map (take 15) $ transpose $ map (map sirStateI) $ snd ps
+>   print (length qs)
+>   print (length $ head qs)
+>   print (length us)
+>   chart (zip us actuals) qs "diagrams/generateds.png"
 
 Markov Process and Chains
 =========================
