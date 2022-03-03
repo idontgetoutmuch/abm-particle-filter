@@ -19,7 +19,14 @@ import           Control.Monad (foldM)
 chart :: [(Double, Double)] -> [[Double]] -> FilePath -> IO ()
 chart xs yss fn = do
   R.runRegion $ do
-    _  <- [R.r| library(ggplot2) |]
+    -- _ <- [r| print(Sys.getenv())        |]
+    _ <- [R.r| print(system("type R"))        |]
+    _ <- [R.r| print(.libPaths())        |]
+    _ <- [R.r| print(Sys.getenv()[ grep("LIB|PATH", names(Sys.getenv())) ]) |]
+    _ <- [R.r| library(ggplot2) |]
+    _ <- [R.r| library(tidyverse) |]
+    _ <- [R.r| library(igraph) |]
+    _ <- [R.r| library(ggraph) |]
     let actuals1 = map snd xs
         us       = map fst xs
     p0 <- [R.r| ggplot() |]

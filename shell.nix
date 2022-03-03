@@ -1,8 +1,6 @@
 let
 
   pkgs = builtins.fetchTarball {
-    # url = "https://github.com/NixOS/nixpkgs/archive/21.11.tar.gz";
-    # sha256 = "162dywda2dvfj1248afxc45kcrg83appjd0nmdb541hl7rnncf02";
     url = "https://github.com/NixOS/nixpkgs/archive/nixpkgs-unstable.tar.gz";
     sha256 = "0v3c4r8v40jimicdxqvxnzmdypnafm2baam7z131zk6ljhb8jpg9";
 };
@@ -66,41 +64,18 @@ let
 
   R-with-my-packages = pkgs.rWrapper.override{
     packages = with pkgs.rPackages; [
-      # JuliaCall
-      # reticulate
-      # tidyverse
-      # rmarkdown
-      # Rcpp
-      # RcppEigen
-      # tidyverse
-      # doParallel
-      # doRNG
       ggplot2
-    #   ggridges
-    #   ggthemes
-    #   outbreaks
-    #   rstan
-    #   pkgs.sundials
-    #   (buildRPackage {
-    #     name = "rethinking";
-    #     src = pkgs.fetchFromGitHub {
-    #       owner = "rmcelreath";
-    #       repo = "rethinking";
-    #       rev = "d0978c7f8b6329b94efa2014658d750ae12b1fa2";
-    #       sha256 = "1qip6x3f6j9lmcmck6sjrj50a5azqfl6rfhp4fdj7ddabpb8n0z0";
-    #     };
-    #     propagatedBuildInputs = [ coda MASS mvtnorm loo shape rstan dagitty ];
-    #   })
-    #   (buildRPackage {
-    #     name = "smcsamplers";
-    #     src = pkgs.fetchFromGitHub {
-    #       owner = "pierrejacob";
-    #       repo = "smcsamplers";
-    #       rev = "097192f7d5df520d9b026d442dfec493a3051374";
-    #       sha256 = "00facn1ylcbai4sbcidpp991899csz2ppmmkv0khvqxfncddr0f2";
-    #     };
-    #     propagatedBuildInputs = [ coda MASS mvtnorm loo shape rstan dagitty ];
-    # })
+      tidyverse
+      (buildRPackage {
+        name = "smcsamplers";
+        src = pkgs.fetchFromGitHub {
+          owner = "pierrejacob";
+          repo = "smcsamplers";
+          rev = "097192f7d5df520d9b026d442dfec493a3051374";
+          sha256 = "00facn1ylcbai4sbcidpp991899csz2ppmmkv0khvqxfncddr0f2";
+        };
+        propagatedBuildInputs = [ coda MASS mvtnorm loo shape rstan tidyverse doParallel igraph ggraph doRNG reshape2 ];
+    })
     ]; };
 
   haskellDeps = ps: with ps; [
@@ -116,6 +91,7 @@ let
     mtl
   ];
 
+  # FIXME: One day I will be able to use julia with nix
   environment.systemPackages = with pkgs; [ julia_17-bin ];
 
 in
@@ -131,7 +107,7 @@ pkgs.stdenv.mkDerivation {
     (pkgs.myHaskellPackages.ghcWithPackages haskellDeps)
   ];
   shellHook = ''
-    R_LIBS_USER=$(Rscript -e ".libPaths()" | cut -c 5- | Rscript -e ".libPaths()" | cut -c 5- | sed 's/[ \t]*$//' | sed 's/"//g' | sed -z 's/\n/:/g;s/:'''$/\n/' | sed 's/ //g')
+    R_LIBS_USER=$(Rscript -e ".libPaths()" | cut -c 6- | sed 's/[ \t]*$//' | sed 's/"//g' | sed -z 's/\n/:/g;s/:'''$/\n/' | sed 's/ //g')
     export R_LIBS_USER
     '';
 }
