@@ -218,12 +218,12 @@ value for the number of inspections.
 
 > f' :: R.StatefulGen a IO =>
 >       a ->
->       (Particles SirState, Particles Double, Double) ->
+>       (Particles SirState, Particles Double, Double, Particles Int) ->
 >       Observed ->
->       IO ((Particles SirState, Particles Double, Double), (Double, Particles SirState))
-> f' gen (is, iws, logLikelihood) x = do
->   (obs, logWeights, predictiveLikelihood, ps) <- pf gen is (topF (SirParams 0.2 10.0 0.5)) topG topD iws x
->   return ((ps, logWeights, logLikelihood + predictiveLikelihood), ((sum $ map observed obs) / (fromIntegral $ length obs), ps))
+>       IO ((Particles SirState, Particles Double, Double, Particles Int), ((Double, Particles SirState), Particles Int))
+> f' gen (is, iws, logLikelihood, _) x = do
+>   (obs, logWeights, predictiveLikelihood, js, ps) <- pf gen is (topF (SirParams 0.2 10.0 0.5)) topG topD iws x
+>   return ((ps, logWeights, logLikelihood + predictiveLikelihood, js), (((sum $ map observed obs) / (fromIntegral $ length obs), ps), js))
 
 Further we can create some initial values and seed the random number
 generator (FIXME: I don't think this is really seeded).
@@ -243,13 +243,13 @@ generator (FIXME: I don't think this is really seeded).
 > us :: [Double]
 > us = map fromIntegral [1 .. length actuals]
 
-> predicteds :: [Double] -> IO ([Double], [Particles SirState])
+> predicteds :: [Double] -> IO (([Double], [Particles SirState]), [Particles Int])
 > predicteds as = do
 >   setStdGen (mkStdGen 42)
 >   stdGen <- newStdGenM
->   ps <- mapAccumM (f' stdGen) (initParticles, initWeights, 0.0) (map Observed $ drop 1 as)
->   return (1.0 : (take (length actuals - 1) (map fst $ snd ps)),
->           initParticles : (map snd $ snd ps))
+>   ps <- mapAccumM (f' stdGen) (initParticles, initWeights, 0.0, [1 .. nParticles]) (map Observed $ drop 1 as)
+>   return ((1.0 : (take (length actuals - 1) $ map fst $ map fst $ snd ps),
+>           initParticles : (map snd $ map fst $ snd ps)), map snd $ snd ps)
 
 > actuals :: [Double]
 > actuals = [1, 3, 8, 28, 76, 222, 293, 257, 237, 192, 126, 70, 28, 12, 5]
@@ -262,8 +262,8 @@ We can finally run the model against the data and plot the results.
 >   chart (zip us actuals) [q] "diagrams/modelActuals.png"
 >   ps <- predicteds q
 >   let qs :: [[Double]]
->       qs = transpose $ map (map sirStateI) $ snd ps
->   chart (zip us q) [fst ps] "diagrams/predicteds.png"
+>       qs = transpose $ map (map sirStateI) $ snd $ fst ps
+>   chart (zip us q) [fst $ fst ps] "diagrams/predicteds.png"
 >   chart (zip us q) qs "diagrams/generateds.png"
 
 ![](diagrams/predicteds.png)

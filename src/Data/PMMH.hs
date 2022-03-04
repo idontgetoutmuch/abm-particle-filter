@@ -39,7 +39,7 @@ pf :: forall m a b d g . (Monad m, Floating d, Ord d, UniformRange d) =>
       (b -> b -> d) ->
       Particles d ->
       b ->
-      m (Particles b, [d], d, Particles a)
+      m (Particles b, Particles d, d, Particles Int, Particles a)
 pf gen statePrev f g d log_w y = do
 
   let bigN = length log_w
@@ -60,4 +60,4 @@ pf gen statePrev f g d log_w y = do
       swm                  = sum wm
       predictiveLikelihood = maxWeight + log swm - log (fromIntegral bigN)
 
-  return (obsPredicted, ds, predictiveLikelihood, statePredicted)
+  return (obsPredicted, ds, predictiveLikelihood, b, statePredicted)
