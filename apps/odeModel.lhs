@@ -229,7 +229,7 @@ Further we can create some initial values and seed the random number
 generator (FIXME: I don't think this is really seeded).
 
 > nParticles :: Int
-> nParticles = 50
+> nParticles = 64
 
 > initParticles :: Particles SirState
 > initParticles = [SirState 762 1 0 | _ <- [1 .. nParticles]]

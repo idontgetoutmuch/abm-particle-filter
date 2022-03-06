@@ -7,18 +7,19 @@
 
 module Data.Chart (
   chart,
-  foo
+  dendro
   ) where
 
 import System.FilePath ()
+import Data.Int
 
 import qualified Language.R as R
 import qualified Language.R.QQ as R
 import           Control.Monad (foldM)
 
-
-foo :: IO ()
-foo = do
+-- | Not as useful as I thought it would be
+dendro :: [[Int32]] -> FilePath -> IO ()
+dendro xss fn = do
     R.runRegion $ do
       _ <- [R.r| library(ggplot2) |]
       _ <- [R.r| library(tidyverse) |]
@@ -26,18 +27,11 @@ foo = do
       _ <- [R.r| library(ggraph) |]
       _ <- [R.r| library(smcsamplers) |]
       empty <- [R.r| list() |]
-      let bar1, bar2 :: [Double]
-          bar1 = [1, 2, 3]
-          bar2 = [2, 2, 3]
-          bar3 = [3, 2, 3]
-          bar4 = [3, 3, 3]
-      pN <- foldM (\s x -> do [R.r| append(s_hs, list(x_hs)) |]) empty [bar4, bar3, bar2, bar1]
-      _ <- [R.r| print(pN_hs[[2]]) |]
+      pN <- foldM (\s x -> do [R.r| append(s_hs, list(x_hs)) |]) empty xss
       q <- [R.r| ahistory2genealogy(pN_hs) |]
-      _ <- [R.r| print(q_hs) |]
       m <- [R.r| mygraph <- graph_from_data_frame(q_hs$dendro) |]
       g <- [R.r| ggraph(m_hs, layout = 'dendrogram', circular = F) + geom_edge_hive(edge_width = 0.2) + theme_void() + coord_flip() + scale_y_reverse() |]
-      _ <- [R.r| png(filename="diagrams/dendro.png") |]
+      _ <- [R.r| png(filename=fn_hs) |]
       _ <- [R.r| print(g_hs) |]
       _ <- [R.r| dev.off() |]
       return ()
