@@ -65,6 +65,8 @@ let
   R-with-my-packages = pkgs.rWrapper.override{
     packages = with pkgs.rPackages; [
       ggplot2
+      ggridges
+      outbreaks
       tidyverse
       (buildRPackage {
         name = "smcsamplers";

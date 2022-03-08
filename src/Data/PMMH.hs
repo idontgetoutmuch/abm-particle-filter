@@ -7,11 +7,15 @@ module Data.PMMH (
     resampleStratified
   , pf
   , Particles
+  , g'
   ) where
 
 import           System.Random
 import           Data.Maybe (catMaybes)
 import           Data.List (unfoldr)
+
+import           Data.Random.Distribution.Normal
+import qualified Data.Random as R
 
 
 resampleStratified :: (UniformRange d, Ord d, Fractional d) => [d] -> [Int]
@@ -39,7 +43,7 @@ pf :: forall m a b d g . (Monad m, Floating d, Ord d, UniformRange d) =>
       (b -> b -> d) ->
       Particles d ->
       b ->
-      m (Particles b, Particles d, d, Particles Int, Particles a)
+      m (Particles b, Particles d, d, Particles a)
 pf gen statePrev f g d log_w y = do
 
   let bigN = length log_w
@@ -60,4 +64,16 @@ pf gen statePrev f g d log_w y = do
       swm                  = sum wm
       predictiveLikelihood = maxWeight + log swm - log (fromIntegral bigN)
 
-  return (obsPredicted, ds, predictiveLikelihood, b, statePredicted)
+  return (obsPredicted, ds, predictiveLikelihood, statePredicted)
+
+g' :: (Monad m, Floating c, Ord c, UniformRange c, Fractional b) =>
+      g
+   -> (g -> a -> m a)
+   -> (a -> b)
+   -> (b -> b -> c)
+   -> (Particles a, Particles c, c)
+   -> b
+   -> m ((Particles a, Particles c, c), (b, Particles a))
+g' gen f g d (is, iws, logLikelihood) x = do
+  (obs, logWeights, predictiveLikelihood, ps) <- pf gen is f g d iws x
+  return ((ps, logWeights, logLikelihood + predictiveLikelihood), ((sum obs) / (fromIntegral $ length obs), ps))

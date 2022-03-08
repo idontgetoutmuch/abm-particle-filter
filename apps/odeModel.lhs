@@ -6,10 +6,13 @@ bibliography: references.bib
 Introduction
 ============
 
-Some references
+Some references for ABMs and inference:
 
-@Ross2017, @Lima2021, @Christ2021, @Rocha2021
+ * @Ross2017, @Lima2021, @Christ2021, @Rocha2021
 
+Some references for SMC:
+
+ * @Dai
 
 Example
 =======
@@ -56,6 +59,7 @@ required modules.
 > {-# LANGUAGE ViewPatterns        #-}
 > {-# LANGUAGE BangPatterns        #-}
 > {-# LANGUAGE QuasiQuotes         #-}
+> {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 > {-# OPTIONS_GHC -Wall              #-}
 > {-# OPTIONS_GHC -Wno-type-defaults #-}
@@ -194,7 +198,7 @@ many students were sick on any given day. We create a type for the
 daily observation and a function to create this from the state. In
 this case the observation function is particularly simple.
 
-> newtype Observed = Observed { observed :: Double } deriving (Eq, Show)
+> newtype Observed = Observed { observed :: Double } deriving (Eq, Show, Num, Fractional)
 
 > topG :: SirState -> Observed
 > topG = Observed . sirStateI
@@ -216,14 +220,17 @@ particle filter for one time step and returns the new set of
 particles, new weights, the updated loglikelihood and a predicted
 value for the number of inspections.
 
-> f' :: R.StatefulGen a IO =>
->       a ->
->       (Particles SirState, Particles Double, Double, Particles Int) ->
->       Observed ->
->       IO ((Particles SirState, Particles Double, Double, Particles Int), ((Double, Particles SirState), Particles Int))
-> f' gen (is, iws, logLikelihood, _) x = do
->   (obs, logWeights, predictiveLikelihood, js, ps) <- pf gen is (topF (SirParams 0.2 10.0 0.5)) topG topD iws x
->   return ((ps, logWeights, logLikelihood + predictiveLikelihood, js), (((sum $ map observed obs) / (fromIntegral $ length obs), ps), js))
+> f' :: (Monad m, Floating c, Ord c, UniformRange c, Fractional b) =>
+>       g
+>    -> (g -> a -> m a)
+>    -> (a -> b)
+>    -> (b -> b -> c)
+>    -> (Particles a, Particles c, c)
+>    -> b
+>    -> m ((Particles a, Particles c, c), (b, Particles a))
+> f' gen f g d (is, iws, logLikelihood) x = do
+>   (obs, logWeights, predictiveLikelihood, ps) <- pf gen is f g d iws x
+>   return ((ps, logWeights, logLikelihood + predictiveLikelihood), ((sum obs) / (fromIntegral $ length obs), ps))
 
 Further we can create some initial values and seed the random number
 generator (FIXME: I don't think this is really seeded).
@@ -243,13 +250,12 @@ generator (FIXME: I don't think this is really seeded).
 > us :: [Double]
 > us = map fromIntegral [1 .. length actuals]
 
-> predicteds :: [Double] -> IO (([Double], [Particles SirState]), [Particles Int])
-> predicteds as = do
->   setStdGen (mkStdGen 42)
->   stdGen <- newStdGenM
->   ps <- mapAccumM (f' stdGen) (initParticles, initWeights, 0.0, [1 .. nParticles]) (map Observed $ drop 1 as)
->   return ((1.0 : (take (length actuals - 1) $ map fst $ map fst $ snd ps),
->           initParticles : (map snd $ map fst $ snd ps)), map snd $ snd ps)
+> predicteds' :: (Monad m, Num c, Num a1) =>
+>                ((a2, b1, c) -> b2 -> m ((a2, b1, c), (a1, a2))) -> a2 -> b1 -> [b2] -> m ([a1], [a2])
+> predicteds' s ips iws as = do
+>   ps <- mapAccumM s (ips, iws, 0.0) (drop 1 as)
+>   return (1.0 : (take (length actuals - 1) (map fst $ snd ps)),
+>           ips : (map snd $ snd ps))
 
 > actuals :: [Double]
 > actuals = [1, 3, 8, 28, 76, 222, 293, 257, 237, 192, 126, 70, 28, 12, 5]
@@ -260,10 +266,12 @@ We can finally run the model against the data and plot the results.
 > main = do
 >   q <- testSol
 >   chart (zip us actuals) [q] "diagrams/modelActuals.png"
->   ps <- predicteds q
+>   setStdGen (mkStdGen 42)
+>   stdGen <- newStdGenM
+>   ps <- predicteds' (f' stdGen (topF (SirParams 0.2 10.0 0.5)) topG topD) initParticles initWeights (map Observed q)
 >   let qs :: [[Double]]
->       qs = transpose $ map (map sirStateI) $ snd $ fst ps
->   chart (zip us q) [fst $ fst ps] "diagrams/predicteds.png"
+>       qs = transpose $ map (map sirStateI) $ snd ps
+>   chart (zip us q) [map observed $ fst ps] "diagrams/predicteds.png"
 >   chart (zip us q) qs "diagrams/generateds.png"
 
 ![](diagrams/predicteds.png)
@@ -279,6 +287,11 @@ these. We could use Markov Chain Monte Carlo (or Hamiltonian Monte
 Carlo) using the deterministic SIR model. FIXME: we could use the Stan
 example to draw some pictures but for Agent Based Models, this is
 rarely available.
+
+```{.stan include=sir_negbin.stan}
+```
+
+![](diagrams/fakedata.png)
 
 Markov Process and Chains
 =========================
