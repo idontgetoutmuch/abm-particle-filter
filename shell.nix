@@ -81,10 +81,12 @@ let
     ]; };
 
   haskellDeps = ps: with ps; [
+    (pkgs.haskell.lib.dontCheck ad)
     hmatrix-sundials
     cassava
     bytestring
     katip
+    monad-extras
     vector
     QuickCheck
     random-fu

@@ -79,7 +79,6 @@ required modules.
 
 > import           Data.Random.Distribution.Normal
 > import qualified Data.Random as R
-> import           Distribution.Utils.MapAccum
 
 > import           Control.Monad.IO.Class (MonadIO)
 >
@@ -220,17 +219,7 @@ particle filter for one time step and returns the new set of
 particles, new weights, the updated loglikelihood and a predicted
 value for the number of inspections.
 
-> f' :: (Monad m, Floating c, Ord c, UniformRange c, Fractional b) =>
->       g
->    -> (g -> a -> m a)
->    -> (a -> b)
->    -> (b -> b -> c)
->    -> (Particles a, Particles c, c)
->    -> b
->    -> m ((Particles a, Particles c, c), (b, Particles a))
-> f' gen f g d (is, iws, logLikelihood) x = do
->   (obs, logWeights, predictiveLikelihood, ps) <- pf gen is f g d iws x
->   return ((ps, logWeights, logLikelihood + predictiveLikelihood), ((sum obs) / (fromIntegral $ length obs), ps))
+FIXME: Include code here
 
 Further we can create some initial values and seed the random number
 generator (FIXME: I don't think this is really seeded).
@@ -250,17 +239,12 @@ generator (FIXME: I don't think this is really seeded).
 > us :: [Double]
 > us = map fromIntegral [1 .. length actuals]
 
-> predicteds' :: (Monad m, Num c, Num a1) =>
->                ((a2, b1, c) -> b2 -> m ((a2, b1, c), (a1, a2))) -> a2 -> b1 -> [b2] -> m ([a1], [a2])
-> predicteds' s ips iws as = do
->   ps <- mapAccumM s (ips, iws, 0.0) (drop 1 as)
->   return (1.0 : (take (length actuals - 1) (map fst $ snd ps)),
->           ips : (map snd $ snd ps))
-
 > actuals :: [Double]
 > actuals = [1, 3, 8, 28, 76, 222, 293, 257, 237, 192, 126, 70, 28, 12, 5]
 
 We can finally run the model against the data and plot the results.
+
+FIXME: Include code here
 
 > main :: IO ()
 > main = do
@@ -268,7 +252,7 @@ We can finally run the model against the data and plot the results.
 >   chart (zip us actuals) [q] "diagrams/modelActuals.png"
 >   setStdGen (mkStdGen 42)
 >   stdGen <- newStdGenM
->   ps <- predicteds' (f' stdGen (topF (SirParams 0.2 10.0 0.5)) topG topD) initParticles initWeights (map Observed q)
+>   ps <- predicteds (g' stdGen (topF (SirParams 0.2 10.0 0.5)) topG topD) initParticles initWeights (map Observed q)
 >   let qs :: [[Double]]
 >       qs = transpose $ map (map sirStateI) $ snd ps
 >   chart (zip us q) [map observed $ fst ps] "diagrams/predicteds.png"

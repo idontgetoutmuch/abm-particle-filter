@@ -27,6 +27,7 @@ library
         hmatrix,
         inline-r,
         katip,
+        monad-extras,
         mtl,
         QuickCheck,
         random,
