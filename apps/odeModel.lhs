@@ -52,6 +52,7 @@ A Deterministic Haskell Model
 First let us set the necessary Haskell extensions and import the
 required modules.
 
+<!-- This is all an HTML comment.
 > {-# LANGUAGE ScopedTypeVariables #-}
 > {-# LANGUAGE FlexibleContexts    #-}
 > {-# LANGUAGE OverloadedLists     #-}
@@ -85,12 +86,15 @@ required modules.
 > import           Data.PMMH
 > import           Data.OdeSettings
 > import           Data.Chart
+-->
 
 Define the state and parameters for the model (FIXME: the infectivity
 rate and the contact rate are always used as $c\beta$ and are thus
 non-identifiable - I should probably just write the model with a
 single parameter $\alpha = c\beta$).
 
+<details class="code-details">
+<summary>Extensions and imports for this Literate Haskell file</summary>
 > data SirState = SirState {
 >     sirStateS :: Double
 >   , sirStateI :: Double
@@ -107,6 +111,7 @@ single parameter $\alpha = c\beta$).
 >     sirS     :: SirState
 >   , sirP     :: SirParams
 >   } deriving (Eq, Show)
+</details>
 
 
 Define the actual ODE problem itself (FIXME: we can hide a lot more of the unnecessary details)
