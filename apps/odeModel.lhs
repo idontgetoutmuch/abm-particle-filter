@@ -12,7 +12,7 @@ Some references for ABMs and inference:
 
 Some references for SMC:
 
- * @Dai
+ * @Dai @Endo2019
 
 Example
 =======
