@@ -12,7 +12,7 @@ Some references for ABMs and inference:
 
 Some references for SMC:
 
- * @Dai @Endo2019
+ * @Dai, @Endo2019, @Dahlin, @Svensson
 
 Example
 =======
@@ -49,10 +49,9 @@ of an influenza outbreak in a boarding school in the UK.
 A Deterministic Haskell Model
 -----------------------------
 
-First let us set the necessary Haskell extensions and import the
-required modules.
+<details class="code-details">
+<summary>Extensions and imports for this Literate Haskell file</summary>
 
-<!-- This is all an HTML comment.
 > {-# LANGUAGE ScopedTypeVariables #-}
 > {-# LANGUAGE FlexibleContexts    #-}
 > {-# LANGUAGE OverloadedLists     #-}
@@ -86,15 +85,44 @@ required modules.
 > import           Data.PMMH
 > import           Data.OdeSettings
 > import           Data.Chart
--->
+
+</details>
+
+Basic Reproduction Number
+-------------------------
 
 Define the state and parameters for the model (FIXME: the infectivity
 rate and the contact rate are always used as $c\beta$ and are thus
 non-identifiable - I should probably just write the model with a
 single parameter $\alpha = c\beta$).
 
+If $\beta$ were constant, then $R_0 \triangleq \beta / \gamma$ would
+also be constant: the famous *basic reproduction number* for the SIR
+model.
+
+When the transmission rate is time-varying, then $R_0(t)$ is a
+time-varying version of the basic reproduction number.
+
+Prior to solving the model directly, we make a few changes:
+
+- Re-parameterize using $\beta(t) = \gamma R_0(t)$
+- Define the proportion of individuals in each state as $ s \triangleq S/N $ etc.
+- Divide each equation by $ N $, and write the system of ODEs in terms of the proportions
+
+$$
+\begin{aligned}
+     \frac{d s}{d t}  & = - \gamma \, R_0 \, s \,  i
+     \\
+     \frac{d e}{d t}   & = \gamma \, R_0 \, s \,  i  - \gamma i
+     \\
+      \frac{d r}{d t}  & = \gamma  i
+\end{aligned}
+$$
+
+
 <details class="code-details">
 <summary>Extensions and imports for this Literate Haskell file</summary>
+
 > data SirState = SirState {
 >     sirStateS :: Double
 >   , sirStateI :: Double
@@ -111,6 +139,7 @@ single parameter $\alpha = c\beta$).
 >     sirS     :: SirState
 >   , sirP     :: SirParams
 >   } deriving (Eq, Show)
+
 </details>
 
 
@@ -189,6 +218,65 @@ So here is the generalised model where we add noise to the
 state. N.B. the invariant that the sum of the susceptible, infected
 and recovered remains constant no longer holds.
 
+Transition Rates (L3)
+---------------------
+
+We switch to a Stochastic Differential Equation (SDE) notation but without the stochasticity to start with.
+
+$$
+\begin{aligned}
+     d s  & = - \gamma \, R_0 \, s \,  i \, dt
+     \\
+      d i  & = \left(\gamma \, R_0 \, s \,  i  - \gamma  \, i \right) dt
+     \\
+     d r  & = \gamma  \, i \, dt
+     \\
+\end{aligned}
+$$
+
+System of SDEs
+--------------
+
+The system can be written in vector form $ x \triangleq [s, i, r, R₀] $ with parameter tuple parameter tuple $ p \triangleq (\gamma, \eta, \sigma, \bar{R}_0) $
+
+The general form of the SDE is.
+
+$$
+\begin{aligned}
+d x_t &= F(x_t,t;p)dt + G(x_t,t;p) dW_t
+\end{aligned}
+$$
+
+With the drift,
+
+$$
+F(x,t;p) \triangleq \begin{bmatrix}
+    -\gamma \, R_0 \, s \,  i
+    \\
+    \gamma \, R_0 \,  s \,  i  - \gamma i
+    \\
+    \gamma i
+    \\
+    \eta (\bar{R}_0 - R_0)
+    \\
+\end{bmatrix}
+$$
+
+Here, it is convenient but not necessary for $ dW_t $ to have the same dimension as $ x $.  If so, then we can use a square matrix $ G(x,t;p) $ to associate the shocks with the appropriate $ x $ (e.g. diagonal noise, or using a covariance matrix).
+
+As the source of Brownian motion only affects the $ d R_0 $ term (i.e. the 4th equation), we define the covariance matrix as
+
+$$
+\begin{aligned}
+G(x,t;p) &\triangleq \begin{bmatrix}
+0 & 0 & 0 & 0 \\
+0 & 0 & 0 & 0 \\
+0 & 0 & 0 & 0 \\
+0 & 0 & 0 & \sigma \sqrt{R_0}
+\end{bmatrix}
+\end{aligned}
+$$
+
 > topF :: R.StatefulGen a IO => SirParams -> a -> SirState -> IO SirState
 > topF ps gen qs = do
 >   m <- sol sir (Sir qs ps) [0.0, 1.0]
@@ -250,6 +338,9 @@ generator (FIXME: I don't think this is really seeded).
 We can finally run the model against the data and plot the results.
 
 FIXME: Include code here
+
+```{.haskell include=src/Data/PMMH.hs startLine=42 endLine=71}
+```
 
 > main :: IO ()
 > main = do
