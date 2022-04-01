@@ -1,0 +1,106 @@
+@article{Ross2017,
+abstract = {In this work, we implement approximate Bayesian computational methods to improve the design of a wound-healing assay used to quantify cell–cell interactions. This is important as cell–cell interactions, such as adhesion and repulsion, have been shown to play a role in cell migration. Initially, we demonstrate with a model of an unrealistic experiment that we are able to identify model parameters that describe agent motility and adhesion, given we choose appropriate summary statistics for our model data. Following this, we replace our model of an unrealistic experiment with a model representative of a practically realisable experiment. We demonstrate that, given the current (and commonly used) experimental set-up, our model parameters cannot be accurately identified using approximate Bayesian computation methods. We compare new experimental designs through simulation, and show more accurate identification of model parameters is possible by expanding the size of the domain upon which the experiment is performed, as opposed to increasing the number of experimental replicates. The results presented in this work, therefore, describe time and cost-saving alterations for a commonly performed experiment for identifying cell motility parameters. Moreover, this work will be of interest to those concerned with performing experiments that allow for the accurate identification of parameters governing cell migratory processes, especially cell migratory processes in which cell–cell adhesion or repulsion are known to play a significant role.},
+author = {Ross, Robert J.H. and Baker, R. E. and Parker, Andrew and Ford, M. J. and Mort, R. L. and Yates, C. A.},
+doi = {10.1038/s41540-017-0010-7},
+file = {:Users/dom/Downloads/Ross 2017 using approximate bayesian computation .pdf:pdf},
+issn = {20567189},
+journal = {npj Systems Biology and Applications},
+number = {1},
+pages = {1--9},
+publisher = {Springer US},
+title = {{Using approximate Bayesian computation to quantify cell–cell adhesion parameters in a cell migratory process}},
+url = {http://dx.doi.org/10.1038/s41540-017-0010-7},
+volume = {3},
+year = {2017}
+}
+
+@book{Lima2021,
+abstract = {Hybrid multiscale agent-based models (ABMs) are unique in their ability to simulate individual cell interactions and microenvironmental dynamics. Unfortunately, the high computational cost of modeling individual cells, the inherent stochasticity of cell dynamics, and numerous model parameters are fundamental limitations of applying such models to predict tumor dynamics. To overcome these challenges, we have developed a coarse-grained twoscale ABM (cgABM) with a reduced parameter space that allows for an accurate and efficient calibration using a set of time-resolved microscopy measurements of cancer cells grown with different initial conditions. The multiscale model consists of a reaction-diffusion type model capturing the spatio-temporal evolution of glucose and growth factors in the tumor microenvironment (at tissue scale), coupled with a lattice-free ABM to simulate individual cell dynamics (at cellular scale). The experimental data consists of BT474 human breast carcinoma cells initialized with different glucose concentrations and tumor cell confluences. The confluence of live and dead cells was measured every three hours over four days. Given this model, we perform a time-dependent global sensitivity analysis to identify the relative importance of the model parameters. The subsequent cgABM is calibrated within a Bayesian framework to the experimental data to estimate model parameters, which are then used to predict the temporal evolution of the living and dead cell populations. To this end, a moment-based Bayesian inference is proposed to account for the stochasticity of the cgABM while quantifying uncertainties due to limited temporal observational data. The cgABM reduces the computational time of ABM simulations by 93% to 97% while staying within a 3% difference in prediction compared to ABM. Additionally, the cgABM can reliably predict the temporal evolution of breast cancer cells observed by the microscopy data with an average error and standard deviation for live and dead cells being 7.61±2.01 and 5.78 ±1.13, respectively.},
+author = {Lima, Ernesto A.B.F. and Faghihi, Danial and Philley, Russell and Yang, Jianchen and Virostko, John and Phillips, Caleb M. and Yankeelov, Thomas E.},
+booktitle = {PLoS Computational Biology},
+doi = {10.1371/journal.pcbi.1008845},
+file = {:Users/dom/Downloads/Lima 2021 bayesian calibration of a stochastic multiscale agent-based model.pdf:pdf},
+isbn = {1111111111},
+issn = {15537358},
+number = {11},
+pages = {1--35},
+pmid = {34843457},
+title = {{Bayesian calibration of a stochastic, multiscale agent-based model for predicting in vitro tumor growth}},
+url = {http://dx.doi.org/10.1371/journal.pcbi.1008845},
+volume = {17},
+year = {2021}
+}
+
+@article{Christ2021,
+author = {Christ, Andreas and J{\o}rgensen, S{\o}lvsten and Ghosh, Atiyo and Sturrock, Marc},
+file = {:Users/dom/Downloads/Jorgensen 2021 efficient inference for agent-based models of real world phenomena.pdf:pdf},
+pages = {1--32},
+title = {{Efficient inference for agent-based models of real-world phenomena Author summary}},
+year = {2021}
+}
+
+@article{Rocha2021,
+abstract = {Hypoxia is a critical factor in solid tumors that has been associated with cancer progression and aggressiveness. We recently developed a hypoxia fate mapping system to trace post-hypoxic cells within a tumor for the first time. This approach uses an oxygen-dependent fluorescent switch and allowed us to measure key biological features such as oxygen distribution, cell proliferation, and migration. We developed a computational model to investigate the motility and phenotypic persistence of hypoxic and post-hypoxic cells during tumor progression. The cellular behavior was defined by phenotypic persistence time, cell movement bias, and the fraction of cells that respond to an enhanced migratory stimulus. This work combined advanced cell tracking and imaging techniques with mathematical modeling, to reveal that a persistent invasive migratory phenotype that develops under hypoxia is required for cellular escape into the surrounding tissue, promoting the formation of invasive structures (“plumes”) that expand toward the oxygenated tumor regions.},
+author = {Rocha, Heber L. and Godet, In{\^{e}}s and Kurtoglu, Furkan and Metzcar, John and Konstantinopoulos, Kali and Bhoyar, Soumitra and Gilkes, Daniele M. and Macklin, Paul},
+doi = {10.1016/j.isci.2021.102935},
+file = {:Users/dom/Downloads/Heber 2021 A persistent invasive phenotype in post-hypoxic tumour cells.pdf:pdf},
+issn = {25890042},
+journal = {iScience},
+keywords = {Cancer,Cancer systems biology,Cell biology,Systems biology},
+number = {9},
+title = {{A persistent invasive phenotype in post-hypoxic tumor cells is revealed by fate mapping and computational modeling}},
+volume = {24},
+year = {2021}
+}
+
+@techreport{Dai,
+abstract = {Sequential Monte Carlo samplers provide consistent approximations of sequences of probability distributions and of their normalizing constants, via particles obtained with a combination of importance weights and Markov transitions. This article presents this class of methods and a number of recent advances, with the goal of helping statisticians assess the applicability and usefulness of these methods for their purposes. Our presentation emphasizes the role of bridging distributions for computational and statistical purposes. Numerical experiments are provided on simple settings such as multivariate Normals, logistic regression and a basic susceptible-infected-recovered model, illustrating the impact of the dimension, the ability to perform inference sequentially and the estimation of normalizing constants.},
+archivePrefix = {arXiv},
+arxivId = {2007.11936v1},
+author = {Dai, Chenguang and Heng, Jeremy and Jacob, Pierre E and Whiteley, Nick},
+eprint = {2007.11936v1},
+title = {{An invitation to sequential Monte Carlo samplers}}
+}
+
+@article{Endo2019,
+abstract = {A R T I C L E I N F O Keywords: Particle Markov-chain Monte Carlo State-space models Hidden Markov process Particle filter Sequential Monte Carlo A B S T R A C T The particle Markov-chain Monte Carlo (PMCMC) method is a powerful tool to efficiently explore high-dimensional parameter space using time-series data. We illustrate an overall picture of PMCMC with minimal but sufficient theoretical background to support the readers in the field of biomedical/health science to apply PMCMC to their studies. Some working examples of PMCMC applied to infectious disease dynamic models are presented with R code.},
+author = {Endo, Akira and {Van Leeuwen}, Edwin and Baguelin, Marc},
+doi = {10.1016/j.epidem.2019.100363},
+isbn = {2019.100363},
+title = {{Introduction to particle Markov-chain Monte Carlo for disease dynamics modellers}},
+url = {https://doi.org/10.1016/j.epidem.2019.100363},
+year = {2019}
+}
+
+@techreport{Dahlin,
+abstract = {This tutorial provides a gentle introduction to the particle Metropolis-Hastings (PMH) algorithm for parameter inference in nonlinear state-space models together with a software implementation in the statistical programming language R. We employ a step-by-step approach to develop an implementation of the PMH algorithm (and the particle filter within) together with the reader. This final implementation is also available as the package pmhtutorial from the Comprehensive R Archive Network (CRAN) repository. Throughout the tutorial, we provide some intuition as to how the algorithm operates and discuss some solutions to problems that might occur in practice. To illustrate the use of PMH, we consider parameter inference in a linear Gaussian state-space model with synthetic data and a nonlinear stochastic volatility model with real-world data.},
+archivePrefix = {arXiv},
+arxivId = {1511.01707v8},
+author = {Dahlin, Johan and Sch{\"{o}}n, Thomas B},
+eprint = {1511.01707v8},
+file = {:Users/dom/Library/Application Support/Mendeley Desktop/Downloaded/Dahlin, Sch{\"{o}}n - Unknown - Getting Started with Particle Metropolis-Hastings for Inference in Nonlinear Dynamical Models.pdf:pdf},
+keywords = {Bayesian inference,particle Markov chain Monte Carlo,particle filtering,state-space models,stochastic volatility model},
+title = {{Getting Started with Particle Metropolis-Hastings for Inference in Nonlinear Dynamical Models}},
+url = {https://cran.r-project.org/package=pmhtutorial.}
+}
+
+@techreport{Svensson,
+abstract = {Bayesian system identification is a theoretically well-founded and currently emerging area. We describe and evaluate two recent state-of-the-art sample-based methods for Bayesian parameter inference from the statistics literature, particle Metropolis-Hastings (PMH) and SMC 2 , and apply them to a non-trivial real world system identification problem with large uncertainty present. We discuss their different properties from a user perspective, and conclude that they show similar performance in practice, while PMH is significantly easier to implement than SMC 2 .},
+author = {Svensson, Andreas and Sch{\"{o}}n, Thomas B},
+file = {:Users/dom/Library/Application Support/Mendeley Desktop/Downloaded/Svensson, Sch{\"{o}}n - Unknown - Comparing Two Recent Particle Filter Implementations of Bayesian System Identification.pdf:pdf},
+keywords = {Bayesian inference,Monte Carlo methods,System identification,particle filters},
+title = {{Comparing Two Recent Particle Filter Implementations of Bayesian System Identification}},
+url = {http://www.it.uu.se/katalog/andsv164}
+}
+
+@article{Drovandi2022,
+abstract = {In this paper we develop a likelihood-free approach for population calibration, which involves finding distributions of model parameters when fed through the model produces a set of outputs that matches available population data. Unlike most other approaches to population calibration, our method produces uncertainty quantification on the estimated distribution. Furthermore, the method can be applied to any population calibration problem, regardless of whether the model of interest is deterministic or stochastic, or whether the population data is observed with or without measurement error. We demonstrate the method on several examples, including one with real data. We also discuss the computational limitations of the approach. Immediate applications for the methodology developed here exist in many areas of medical research including cancer, COVID-19, drug development and cardiology.},
+archivePrefix = {arXiv},
+arxivId = {2202.01962v1},
+author = {Drovandi, Christopher and Lawson, Brodie and Jenner, Adrianne L and Browning, Alexander P},
+eprint = {2202.01962v1},
+file = {:Users/dom/Library/Application Support/Mendeley Desktop/Downloaded/Drovandi et al. - 2022 - Population Calibration using Likelihood-Free Bayesian Inference.pdf:pdf},
+keywords = {Bayesian synthetic likelihood,approximate Bayesian computation,flow cytometry,hetero-geneity,inter-subject variability,population of models},
+title = {{Population Calibration using Likelihood-Free Bayesian Inference}},
+year = {2022}
+}

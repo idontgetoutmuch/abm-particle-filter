@@ -192,13 +192,15 @@ function log_prior_pdf(x, μ, var)
     logpdf(MvLogNormal(log.(μ), var), x)
 end
 
+var2 = [[0.002, 0.0] [0.0, 0.002]];
 
 # Should prior_sample and log_prior_pdf be paramaters and passed into
 # pmh rather than being global?
 function pmh(g, P, N, K, μ, var, actuals, R)
-    # This need generalising - in this case we have 3 parameters but
-    # we should handle any number
-    theta               = zeros(3, K);
+    M                   = length(μ);
+    (S, T)              = size(var);
+    @assert M == S == T;
+    theta               = zeros(M, K);
     prop_acc            = zeros(K);
     log_likelihood_curr = -Inf;
 
@@ -208,8 +210,8 @@ function pmh(g, P, N, K, μ, var, actuals, R)
     while log_likelihood_curr == -Inf
         theta[:, 1] = prior_sample(μ, var);
         β = theta[1, 1];
-        c = theta[2, 1];
-        γ = theta[3, 1];
+        c = 10.0;
+        γ = theta[2, 1];
 
         inits = [init_model(β, c, γ, N, 1) for n in 1:P];
         predicted, log_likelihood_curr = particleFilter(inits, g, P, actuals, R);

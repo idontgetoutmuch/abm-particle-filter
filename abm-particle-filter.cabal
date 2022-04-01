@@ -1,0 +1,53 @@
+cabal-version:       2.4
+
+name:                abm-particle-filter
+version:             0.1.0.0
+license:             BSD-3-Clause
+license-file:        LICENSE
+author:              Dominic Steinitz
+maintainer:          dominic@steinitz.org
+category:            Math
+extra-source-files:  CHANGELOG.md
+
+library
+    exposed-modules:
+        Data.PMMH
+        Data.OdeSettings
+        Data.Chart
+
+    hs-source-dirs:   src
+    other-modules:
+    default-language: Haskell2010
+    build-depends:
+        base,
+        bytestring,
+        Cabal,
+        filepath,
+        hmatrix-sundials,
+        hmatrix,
+        inline-r,
+        katip,
+        monad-extras,
+        mtl,
+        QuickCheck,
+        random,
+        random-fu,
+        vector
+
+executable ode-model
+  main-is:             odeModel.lhs
+  hs-source-dirs:      apps
+  build-depends:       base,
+                       abm-particle-filter,
+                       hmatrix-sundials,
+                       hmatrix,
+                       katip,
+                       bytestring,
+                       vector,
+                       random,
+                       QuickCheck,
+                       random-fu,
+                       Cabal,
+                       inline-r,
+                       mtl
+  default-language:    Haskell2010
