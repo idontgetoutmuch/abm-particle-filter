@@ -80,9 +80,10 @@ A Deterministic Haskell Model
 > import           Data.Random.Distribution.Normal
 > import qualified Data.Random as R
 
-> import           Control.Monad.IO.Class (MonadIO)
+> import           Control.Monad.Reader
 >
 > import           Data.PMMH
+> import qualified Data.PMMH1 as NoGen
 > import           Data.OdeSettings
 > import           Data.Chart
 
@@ -285,6 +286,15 @@ $$
 >   newR <- R.sampleFrom gen (normal (log (m!1!2)) 0.1)
 >   return (SirState (exp newS) (exp newI) (exp newR))
 
+> topF' :: (MonadIO m, R.StatefulGen g m, MonadReader g m) =>
+>          SirParams -> SirState -> m SirState
+> topF' ps qs = do
+>   m <- sol sir (Sir qs ps) [0.0, 1.0]
+>   newS <- R.sample (normal (log (m!1!0)) 0.1)
+>   newI <- R.sample (normal (log (m!1!1)) 0.1)
+>   newR <- R.sample (normal (log (m!1!2)) 0.1)
+>   return (SirState (exp newS) (exp newI) (exp newR))
+
 Apparently the person recording the outbreak only kept records of how
 many students were sick on any given day. We create a type for the
 daily observation and a function to create this from the state. In
@@ -349,10 +359,12 @@ FIXME: Include code here
 >   setStdGen (mkStdGen 42)
 >   stdGen <- newStdGenM
 >   ps <- predicteds (g' stdGen (topF (SirParams 0.2 10.0 0.5)) topG topD) initParticles initWeights (map Observed q)
+>   ps' <- runReaderT (NoGen.predicteds (NoGen.g' (topF' (SirParams 0.2 10.0 0.5)) topG topD) initParticles initWeights (map Observed q)) stdGen
 >   let qs :: [[Double]]
 >       qs = transpose $ map (map sirStateI) $ snd ps
->   chart (zip us q) [map observed $ fst ps] "diagrams/predicteds.png"
+>       qs' = transpose $ map (map sirStateI) $ snd ps'
 >   chart (zip us q) qs "diagrams/generateds.png"
+>   chart (zip us q) qs' "diagrams/generateds'.png"
 
 ![](diagrams/predicteds.png)
 
