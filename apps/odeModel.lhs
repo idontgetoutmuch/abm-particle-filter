@@ -60,6 +60,8 @@ A Deterministic Haskell Model
 > {-# LANGUAGE BangPatterns        #-}
 > {-# LANGUAGE QuasiQuotes         #-}
 > {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+> {-# LANGUAGE MultiParamTypeClasses #-}
+> {-# LANGUAGE FlexibleInstances #-}
 
 > {-# OPTIONS_GHC -Wall              #-}
 > {-# OPTIONS_GHC -Wno-type-defaults #-}
@@ -75,7 +77,7 @@ A Deterministic Haskell Model
 > import qualified Data.Vector.Storable as VS
 > import           Data.List (transpose)
 > import           System.Random
-> import           System.Random.Stateful (IOGenM, newIOGenM)
+> import           System.Random.Stateful (newIOGenM)
 
 > import           Data.Random.Distribution.Normal
 > import qualified Data.Random as R
@@ -83,7 +85,6 @@ A Deterministic Haskell Model
 > import           Control.Monad.Reader
 >
 > import           Data.PMMH
-> import qualified Data.PMMH1 as NoGen
 > import           Data.OdeSettings
 > import           Data.Chart
 
@@ -278,17 +279,9 @@ G(x,t;p) &\triangleq \begin{bmatrix}
 \end{aligned}
 $$
 
-> topF :: R.StatefulGen a IO => SirParams -> a -> SirState -> IO SirState
-> topF ps gen qs = do
->   m <- sol sir (Sir qs ps) [0.0, 1.0]
->   newS <- R.sampleFrom gen (normal (log (m!1!0)) 0.1)
->   newI <- R.sampleFrom gen (normal (log (m!1!1)) 0.1)
->   newR <- R.sampleFrom gen (normal (log (m!1!2)) 0.1)
->   return (SirState (exp newS) (exp newI) (exp newR))
-
-> topF' :: (MonadIO m, R.StatefulGen g m, MonadReader g m) =>
+> topF :: (MonadIO m, R.StatefulGen g m, MonadReader g m) =>
 >          SirParams -> SirState -> m SirState
-> topF' ps qs = do
+> topF ps qs = do
 >   m <- sol sir (Sir qs ps) [0.0, 1.0]
 >   newS <- R.sample (normal (log (m!1!0)) 0.1)
 >   newI <- R.sample (normal (log (m!1!1)) 0.1)
@@ -320,9 +313,10 @@ Now we can define a function that takes the current set of particles,
 their weights and the loglikelihood (FIXME: of what?) runs the
 particle filter for one time step and returns the new set of
 particles, new weights, the updated loglikelihood and a predicted
-value for the number of inspections.
+value for the number of infections.
 
-FIXME: Include code here
+```{.haskell include=src/Data/PMMH.hs startLine=42 endLine=74}
+```
 
 Further we can create some initial values and seed the random number
 generator (FIXME: I don't think this is really seeded).
@@ -336,9 +330,6 @@ generator (FIXME: I don't think this is really seeded).
 > initWeights :: Particles Double
 > initWeights = [ recip (fromIntegral nParticles) | _ <- [1 .. nParticles]]
 
-> newStdGenM :: IO (IOGenM StdGen)
-> newStdGenM = newIOGenM =<< newStdGen
-
 > us :: [Double]
 > us = map fromIntegral [1 .. length actuals]
 
@@ -349,22 +340,42 @@ We can finally run the model against the data and plot the results.
 
 FIXME: Include code here
 
-```{.haskell include=src/Data/PMMH.hs startLine=42 endLine=71}
-```
-
 > main :: IO ()
 > main = do
 >   q <- testSol
 >   chart (zip us actuals) [q] "diagrams/modelActuals.png"
 >   setStdGen (mkStdGen 42)
->   stdGen <- newStdGenM
->   ps <- predicteds (g' stdGen (topF (SirParams 0.2 10.0 0.5)) topG topD) initParticles initWeights (map Observed q)
->   ps' <- runReaderT (NoGen.predicteds (NoGen.g' (topF' (SirParams 0.2 10.0 0.5)) topG topD) initParticles initWeights (map Observed q)) stdGen
+>   g <- newStdGen
+>   stdGen <- newIOGenM g
+>   ps <- runReaderT (predicteds (g' (topF (SirParams 0.2 10.0 0.5)) topG topD) initParticles initWeights (map Observed q)) stdGen
 >   let qs :: [[Double]]
 >       qs = transpose $ map (map sirStateI) $ snd ps
->       qs' = transpose $ map (map sirStateI) $ snd ps'
 >   chart (zip us q) qs "diagrams/generateds.png"
->   chart (zip us q) qs' "diagrams/generateds'.png"
+>   foo <- runReaderT (R.sample (SirParamsD (SirParams 1.0 1.0 1.0))) stdGen
+>   print foo
+>   bar <- runReaderT (pmh topF topG topD (SirParamsD (SirParams 0.2 10.0 0.5)) initParticles (map Observed actuals) (SirParams 0.2 10.0 0.5, undefined, undefined) 10) stdGen
+>   return ()
+
+
+> data SirParamsD a = SirParamsD a
+
+> instance R.Distribution SirParamsD SirParams where
+>   rvar (SirParamsD mu) = do
+>     b <- R.rvar $ Normal (sirParamsBeta mu)  0.002
+>     c <- R.rvar $ Normal (sirParamsC mu)     0.005
+>     g <- R.rvar $ Normal (sirParamsGamma mu) 0.002
+>     return $ SirParams { sirParamsBeta  = b
+>                        , sirParamsC     = c
+>                        , sirParamsGamma = g
+>                        }
+>
+> instance R.PDF SirParamsD SirParams where
+>   logPdf (SirParamsD mu) t = b + c + g
+>     where
+>       b = R.logPdf (Normal (sirParamsBeta mu)  0.002) (sirParamsBeta t)
+>       c = R.logPdf (Normal (sirParamsC mu)     0.005) (sirParamsC t)
+>       g = R.logPdf (Normal (sirParamsGamma mu) 0.002) (sirParamsGamma t)
+
 
 ![](diagrams/predicteds.png)
 

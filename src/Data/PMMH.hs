@@ -17,6 +17,7 @@ import           System.Random.Stateful
 import           Data.Maybe (catMaybes)
 import           Data.List (unfoldr)
 import           Distribution.Utils.MapAccum
+import           Control.Monad.Reader
 import           Control.Monad.Extra
 import qualified Data.Random as R
 
@@ -39,19 +40,19 @@ resampleStratified weights = catMaybes $ unfoldr coalg (0, 0)
 
 type Particles a = [a]
 
-pf :: forall m a b d g . (Monad m, Floating d, Ord d, UniformRange d) =>
-      g ->
+pf :: forall m a b d . (Monad m, Floating d, Ord d, UniformRange d) =>
       Particles a ->
-      (g -> a -> m a) ->
+      (a -> m a) ->
       (a -> b) ->
       (b -> b -> d) ->
       Particles d ->
       b ->
       m (Particles b, Particles d, d, Particles a)
-pf gen statePrev f g d log_w y = do
+pf statePrev f g d log_w y = do
 
   let bigN = length log_w
-      wn   = map exp (zipWith (-) log_w (replicate bigN (maximum log_w)))
+      wn   = map exp $
+             zipWith (-) log_w (replicate bigN (maximum log_w))
       swn  = sum wn
       wn'  = map (/ swn) wn
 
@@ -59,27 +60,29 @@ pf gen statePrev f g d log_w y = do
       a              = map (\i -> i - 1) b
       stateResampled = map (\i -> statePrev!!(a!!i)) [0 .. bigN - 1]
 
-  statePredicted <- mapM (f gen) stateResampled
+  statePredicted <- mapM f stateResampled
 
   let obsPredicted         = map g statePredicted
       ds                   = map (d y) obsPredicted
       maxWeight            = maximum ds
-      wm                   = map exp (zipWith (-) ds (replicate bigN maxWeight))
+      wm                   = map exp $
+                             zipWith (-) ds (replicate bigN maxWeight)
       swm                  = sum wm
-      predictiveLikelihood = maxWeight + log swm - log (fromIntegral bigN)
+      predictiveLikelihood =   maxWeight
+                             + log swm
+                             - log (fromIntegral bigN)
 
   return (obsPredicted, ds, predictiveLikelihood, statePredicted)
 
 g' :: (Monad m, Floating c, Ord c, UniformRange c, Fractional b) =>
-      g
-   -> (g -> a -> m a)
+      (a -> m a)
    -> (a -> b)
    -> (b -> b -> c)
    -> (Particles a, Particles c, c)
    -> b
    -> m ((Particles a, Particles c, c), (b, Particles a))
-g' gen f g d (is, iws, logLikelihood) x = do
-  (obs, logWeights, predictiveLikelihood, ps) <- pf gen is f g d iws x
+g' f g d (is, iws, logLikelihood) x = do
+  (obs, logWeights, predictiveLikelihood, ps) <- pf is f g d iws x
   return ((ps, logWeights, logLikelihood + predictiveLikelihood), ((sum obs) / (fromIntegral $ length obs), ps))
 
 predicteds :: forall a b c m . (Monad m, Num c, Num b, Fractional b, Fractional c) =>
@@ -90,22 +93,21 @@ predicteds s ips iws as = do
   return (let (_, _, z) = fst ps in z,
           ips : (map snd $ snd ps))
 
-pmhOneStep :: (StatefulGen g m, Fractional b, Num c, R.PDF d a1) =>
-              g
-           -> (a1 -> g -> a -> m a)
-           -> (a -> b)
+pmhOneStep :: (MonadReader g m, StatefulGen g m, Fractional b, Num c, R.PDF d a1) =>
+              (a1 -> a2 -> m a2)
+           -> (a2 -> b)
            -> (b -> b -> Double)
            -> d a1
-           -> [a]
+           -> [a2]
            -> [b]
            -> (a1, Double, c)
            -> m (a1, Double, c)
-pmhOneStep gen f g d dist ips as (paramsPrev, logLikelihoodPrev, acceptPrev) = do
+pmhOneStep f g d dist ips as (paramsPrev, logLikelihoodPrev, acceptPrev) = do
   let bigN = length ips
   let iws = replicate bigN (recip $ fromIntegral bigN)
-  paramsProp <- R.sampleFrom gen dist
+  paramsProp <- R.sample dist
   -- FIXME: I am not convinced predicted are predicted
-  (log_likelihood_prop, _) <- predicteds (g' gen (f paramsProp) g d) ips iws as
+  (log_likelihood_prop, _) <- predicteds (g' (f paramsProp) g d) ips iws as
   let log_likelihood_diff = log_likelihood_prop - logLikelihoodPrev
 
   let log_prior_curr = R.pdf dist paramsPrev
@@ -114,26 +116,25 @@ pmhOneStep gen f g d dist ips as (paramsPrev, logLikelihoodPrev, acceptPrev) = d
 
   let acceptance_prob = exp (log_prior_diff + log_likelihood_diff)
 
-  r <- uniformDouble01M gen
+  r <- R.sample $ R.uniform 0.0 1.0
+
   if r < acceptance_prob
     then return (paramsProp, log_likelihood_prop, acceptPrev + 1)
     else return (paramsPrev, logLikelihoodPrev, acceptPrev)
 
-pmh :: forall g m b c d p a . (StatefulGen g m, Fractional b, Num c, R.PDF d p) =>
-       g
-    -> (p -> g -> a -> m a)
+pmh :: forall g m c z p b d a . (MonadReader g m, StatefulGen g m, Num c, Ord z, Fractional b, R.PDF d p, Num z) =>
+       (p -> a -> m a)
     -> (a -> b)
     -> (b -> b -> Double)
     -> d p
     -> [a]
     -> [b]
     -> (p, Double, c)
-    -> Int
-    -> m [((p, Double, c), Int)]
-pmh gen f g d dist ips as s bigN = unfoldM h (s, 0)
+    -> z
+    -> m [((p, Double, c), z)]
+pmh f g d dist ips as s bigN = unfoldM h (s, 0)
   where
-    h :: ((p, Double, c), Int) -> m (Maybe (((p, Double, c), Int), ((p, Double, c), Int)))
     h (u, n) | n <= bigN = return Nothing
-             | otherwise = do t <- pmhOneStep gen f g d dist ips as u
+             | otherwise = do t <- pmhOneStep f g d dist ips as u
                               return $ Just ((t, n + 1), (t, n + 1))
 
