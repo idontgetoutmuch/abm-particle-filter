@@ -62,6 +62,7 @@ A Deterministic Haskell Model
 > {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 > {-# LANGUAGE MultiParamTypeClasses #-}
 > {-# LANGUAGE FlexibleInstances #-}
+> {-# LANGUAGE TypeFamilies #-}
 
 > {-# OPTIONS_GHC -Wall              #-}
 > {-# OPTIONS_GHC -Wno-type-defaults #-}
@@ -81,6 +82,7 @@ A Deterministic Haskell Model
 
 > import           Data.Random.Distribution.Normal
 > import qualified Data.Random as R
+> import           Data.Kind (Type)
 
 > import           Control.Monad.Reader
 >
@@ -351,30 +353,30 @@ FIXME: Include code here
 >   let qs :: [[Double]]
 >       qs = transpose $ map (map sirStateI) $ snd ps
 >   chart (zip us q) qs "diagrams/generateds.png"
->   foo <- runReaderT (R.sample (SirParamsD (SirParams 1.0 1.0 1.0))) stdGen
->   print foo
->   bar <- runReaderT (pmh topF topG topD (SirParamsD (SirParams 0.2 10.0 0.5)) initParticles (map Observed actuals) (SirParams 0.2 10.0 0.5, undefined, undefined) 10) stdGen
+>   bar <- runReaderT (pmh topF topG topD (SirParamsD (SirParams 0.2 10.0 0.5) 0.002 0.005 0.002) initParticles (map Observed actuals) (SirParams 0.2 10.0 0.5, fst ps, 0.0) 10) stdGen
+>   print bar
 >   return ()
 
+> data family SirParamsD k :: Type
 
-> data SirParamsD a = SirParamsD a
+> data instance SirParamsD SirParams = SirParamsD SirParams Double Double Double
 
 > instance R.Distribution SirParamsD SirParams where
->   rvar (SirParamsD mu) = do
->     b <- R.rvar $ Normal (sirParamsBeta mu)  0.002
->     c <- R.rvar $ Normal (sirParamsC mu)     0.005
->     g <- R.rvar $ Normal (sirParamsGamma mu) 0.002
+>   rvar (SirParamsD mu sigmaBeta sigmaC sigmaGamma) = do
+>     b <- R.rvar $ Normal (sirParamsBeta mu)  sigmaBeta
+>     c <- R.rvar $ Normal (sirParamsC mu)     sigmaC
+>     g <- R.rvar $ Normal (sirParamsGamma mu) sigmaGamma
 >     return $ SirParams { sirParamsBeta  = b
 >                        , sirParamsC     = c
 >                        , sirParamsGamma = g
 >                        }
 >
 > instance R.PDF SirParamsD SirParams where
->   logPdf (SirParamsD mu) t = b + c + g
+>   logPdf (SirParamsD mu sigmaBeta sigmaC sigmaGamma) t = b + c + g
 >     where
->       b = R.logPdf (Normal (sirParamsBeta mu)  0.002) (sirParamsBeta t)
->       c = R.logPdf (Normal (sirParamsC mu)     0.005) (sirParamsC t)
->       g = R.logPdf (Normal (sirParamsGamma mu) 0.002) (sirParamsGamma t)
+>       b = R.logPdf (Normal (sirParamsBeta mu)  sigmaBeta)  (sirParamsBeta t)
+>       c = R.logPdf (Normal (sirParamsC mu)     sigmaC)     (sirParamsC t)
+>       g = R.logPdf (Normal (sirParamsGamma mu) sigmaGamma) (sirParamsGamma t)
 
 
 ![](diagrams/predicteds.png)
