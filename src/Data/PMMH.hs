@@ -1,4 +1,5 @@
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell     #-}
 
 {-# OPTIONS_GHC -Wall              #-}
 {-# OPTIONS_GHC -Wno-type-defaults #-}
@@ -20,9 +21,10 @@ import           Distribution.Utils.MapAccum
 import           Control.Monad.Reader
 import           Control.Monad.Extra
 import qualified Data.Random as R
+import           Katip
 
-import Debug.Trace
-
+import Formatting
+import qualified Data.Text.Lazy as L
 
 resampleStratified :: (UniformRange d, Ord d, Fractional d) => [d] -> [Int]
 resampleStratified weights = catMaybes $ unfoldr coalg (0, 0)
@@ -95,7 +97,8 @@ predicteds s ips iws as = do
   return (let (_, _, z) = fst ps in z,
           ips : (map snd $ snd ps))
 
-pmhOneStep :: (MonadReader g m, StatefulGen g m, Fractional b, Num c, R.PDF d a1, Show a1) =>
+pmhOneStep :: (MonadReader g m, StatefulGen g m, KatipContext m,
+               Fractional b, Num c, R.PDF d a1, Show a1, Show c) =>
               (a1 -> a2 -> m a2)
            -> (a2 -> b)
            -> (b -> b -> Double)
@@ -105,28 +108,35 @@ pmhOneStep :: (MonadReader g m, StatefulGen g m, Fractional b, Num c, R.PDF d a1
            -> (a1, Double, c)
            -> m (a1, Double, c)
 pmhOneStep f g d dist ips as (paramsPrev, logLikelihoodPrev, acceptPrev) = do
+  $(logTM) InfoS (logStr (show acceptPrev))
   let bigN = length ips
   let iws = replicate bigN (recip $ fromIntegral bigN)
   paramsProp <- R.sample dist
-  trace (show paramsProp) $ return ()
   -- FIXME: I am not convinced predicted are predicted
-  (log_likelihood_prop, _) <- predicteds (g' (f paramsProp) g d) ips iws as
-  trace (show log_likelihood_prop ++ " " ++ show logLikelihoodPrev) $ return ()
-  let log_likelihood_diff = log_likelihood_prop - logLikelihoodPrev
+  $(logTM) InfoS (logStr $ show paramsPrev)
+  $(logTM) InfoS (logStr $ show paramsProp)
+  (logLikelihoodProp, _) <- predicteds (g' (f paramsProp) g d) ips iws as
+  let logLikelihoodDiff = logLikelihoodProp - logLikelihoodPrev
 
-  let log_prior_curr = R.pdf dist paramsPrev
-      log_prior_prop = R.pdf dist paramsProp
-      log_prior_diff = log_prior_prop - log_prior_curr
-
-  let acceptance_prob = exp (log_prior_diff + log_likelihood_diff)
+  $(logTM) InfoS (logStr (" Log likelihood prop = " ++ (L.unpack $ format (fixed 2) logLikelihoodProp) ++
+                          " Log likelihood prev = " ++ (L.unpack $ format (fixed 2) logLikelihoodPrev) ++
+                          " logLikelihoodDiff = " ++ (L.unpack $ format (fixed 2) logLikelihoodDiff)))
+  let logPriorCurr = R.logPdf dist paramsPrev
+      logPriorProp = R.logPdf dist paramsProp
+      logPriorDiff = logPriorProp - logPriorCurr
+  $(logTM) InfoS (logStr (show logPriorCurr ++ " " ++
+                          show logPriorProp ++ " " ++
+                          show logPriorDiff))
+  let acceptance_prob = exp (logPriorDiff + logLikelihoodDiff)
 
   r <- R.sample $ R.uniform 0.0 1.0
 
   if r < acceptance_prob
-    then return (paramsProp, log_likelihood_prop, acceptPrev + 1)
+    then return (paramsProp, logLikelihoodProp, acceptPrev + 1)
     else return (paramsPrev, logLikelihoodPrev, acceptPrev)
 
-pmh :: forall g m c z p b d a . (MonadReader g m, StatefulGen g m, Num c, Ord z, Fractional b, R.PDF d p, Num z, Show z, Show p) =>
+pmh :: forall g m c z p b d a . (MonadReader g m, StatefulGen g m, KatipContext m,
+                                 Num c, Ord z, Fractional b, R.PDF d p, Num z, Show z, Show p, Show c) =>
        (p -> a -> m a)
     -> (a -> b)
     -> (b -> b -> Double)
@@ -138,8 +148,7 @@ pmh :: forall g m c z p b d a . (MonadReader g m, StatefulGen g m, Num c, Ord z,
     -> m [((p, Double, c), z)]
 pmh f g d dist ips as s bigN = unfoldM h (s, 0)
   where
-    h (u, n) | n >= bigN = trace (show n) $ return Nothing
-             | otherwise = trace (show n) $
-                           do t <- pmhOneStep f g d dist ips as u
+    h (u, n) | n >= bigN = return Nothing
+             | otherwise = do t <- pmhOneStep f g d dist ips as u
                               return $ Just ((t, n + 1), (t, n + 1))
 

@@ -93,6 +93,8 @@ let
     Cabal
     (pkgs.haskell.lib.dontCheck inline-r)
     mtl
+    formatting
+    katip
   ];
 
   # FIXME: One day I will be able to use julia with nix

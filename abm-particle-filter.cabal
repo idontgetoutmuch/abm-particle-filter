@@ -32,7 +32,10 @@ library
         QuickCheck,
         random,
         random-fu,
-        vector
+        vector,
+        formatting,
+        text,
+        katip
 
 executable ode-model
   main-is:             odeModel.lhs
