@@ -146,9 +146,19 @@ $$
 >   , sirParamsGamma :: Double
 >   } deriving (Eq, Show)
 
+> data SirParams' = SirParams' {
+>     sirParamsR0    :: Double
+>   , sirParamsKappa :: Double
+>   } deriving (Eq, Show)
+
 > data Sir = Sir {
 >     sirS     :: SirState
 >   , sirP     :: SirParams
+>   } deriving (Eq, Show)
+
+> data Sir' = Sir' {
+>     sirS'     :: SirState
+>   , sirP'     :: SirParams'
 >   } deriving (Eq, Show)
 
 </details>
@@ -182,6 +192,31 @@ Define the actual ODE problem itself (FIXME: we can hide a lot more of the unnec
 >     initI = realToFrac (sirStateI $ sirS ps)
 >     initR = realToFrac (sirStateR $ sirS ps)
 
+> sir' :: Vector Double -> Sir' -> OdeProblem
+> sir' ts ps = emptyOdeProblem
+>   { odeRhs = odeRhsPure f
+>   , odeJacobian = Nothing
+>   , odeInitCond = [initS, initI, initR]
+>   , odeEventHandler = nilEventHandler
+>   , odeMaxEvents = 0
+>   , odeSolTimes = ts
+>   , odeTolerances = defaultTolerances
+>   }
+>   where
+>     f _ (VS.toList -> [s, i, r]) =
+>       let n = s + i + r in
+>         [ -kappa * r0 * i / n * s
+>         , kappa * r0 * i / n * s - kappa * i
+>         , kappa * i
+>         ]
+>     f _ _ = error $ "Incorrect number of parameters"
+>
+>     r0 = realToFrac (sirParamsR0  $ sirP' ps)
+>     kappa = realToFrac (sirParamsKappa $ sirP' ps)
+>     initS = realToFrac (sirStateS $ sirS' ps)
+>     initI = realToFrac (sirStateI $ sirS' ps)
+>     initR = realToFrac (sirStateR $ sirS' ps)
+
 > sol :: MonadIO m =>
 >        (a -> b -> OdeProblem) -> b -> a -> m (Matrix Double)
 > sol s ps ts = do
@@ -198,12 +233,27 @@ Define the actual ODE problem itself (FIXME: we can hide a lot more of the unnec
 >     Left e  -> error $ show e
 >     Right y -> return (solutionMatrix y)
 
+> solK' :: (MonadIO m, Katip m) =>
+>         (a -> b -> OdeProblem) -> b -> a -> m (Matrix Double)
+> solK' s ps ts = do
+>   x <- solve (defaultOpts $ ARKMethod SDIRK_5_3_4) (s ts ps)
+>   case x of
+>     Left e  -> error $ show e
+>     Right y -> return (solutionMatrix y)
+
 We can now run the model and compare its output to the actuals.
 
 > testSolK :: (MonadIO m, KatipContext m) => m [Double]
 > testSolK = do
 >   $(logTM) InfoS "Hello from Katip!"
 >   m <- solK sir (Sir (SirState 762 1 0) (SirParams 0.2 10.0 0.5)) (vector us)
+>   let n = tr m
+>   return $ toList (n!1)
+
+> testSolK' :: (MonadIO m, KatipContext m) => m [Double]
+> testSolK' = do
+>   $(logTM) InfoS "Hello from Katip!"
+>   m <- solK' sir' (Sir' (SirState 762 1 0) (SirParams' 4.0 0.5)) (vector us)
 >   let n = tr m
 >   return $ toList (n!1)
 
@@ -361,17 +411,20 @@ FIXME: Include code here
 > preMainK :: forall m c1 z1 . (KatipContext m, Show c1, Show z1, Num z1, Ord z1, Num c1) => m [((SirParams, Double, c1), z1)]
 > preMainK = do
 >   q <- testSolK
->   liftIO $ chart (zip us actuals) [q] "diagrams/modelActuals.png"
->   setStdGen (mkStdGen 42)
->   g <- newStdGen
->   stdGen <- newIOGenM g
->   ps <- runReaderT (predicteds (g' (topF (SirParams 0.2 10.0 0.5)) topG topD) initParticles initWeights (map Observed actuals)) stdGen
->   $(logTM) InfoS (logStr $ show $ fst ps)
->   let qs :: [[Double]]
->       qs = transpose $ map (map sirStateI) $ snd ps
->   liftIO $ chart (zip us q) qs "diagrams/generateds.png"
->   bar <- runReaderT (pmh topF topG topD (SirParamsD (SirParams 0.2 10.0 0.5) 0.002 0.005 0.002) initParticles (map Observed actuals) (SirParams 0.2 10.0 0.5, fst ps, 0.0) 10) stdGen
->   return bar
+>   r <- testSolK'
+>   liftIO $ chart (zip us actuals) [q, r] "diagrams/modelActuals.png"
+>   return $ error "You are here"
+
+  setStdGen (mkStdGen 42)
+  g <- newStdGen
+  stdGen <- newIOGenM g
+  ps <- runReaderT (predicteds (g' (topF (SirParams 0.2 10.0 0.5)) topG topD) initParticles initWeights (map Observed actuals)) stdGen
+  $(logTM) InfoS (logStr $ show $ fst ps)
+  let qs :: [[Double]]
+      qs = transpose $ map (map sirStateI) $ snd ps
+  liftIO $ chart (zip us q) qs "diagrams/generateds.png"
+  bar <- runReaderT (pmh topF topG topD (SirParamsD (SirParams 0.2 10.0 0.5) 0.002 0.005 0.002) initParticles (map Observed actuals) (SirParams 0.2 10.0 0.5, fst ps, 0.0) 10) stdGen
+  return bar
 
 > main :: IO ()
 > main = do
