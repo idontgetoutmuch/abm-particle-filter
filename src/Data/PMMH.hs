@@ -1,5 +1,6 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell     #-}
+{-# LANGUAGE RecordWildCards     #-}
 
 {-# OPTIONS_GHC -Wall              #-}
 {-# OPTIONS_GHC -Wno-type-defaults #-}
@@ -11,6 +12,7 @@ module Data.PMMH (
   , g'
   , predicteds
   , pmh
+  , myBracketFormat
   ) where
 
 import           System.Random
@@ -118,15 +120,15 @@ pmhOneStep f g d dist ips as (paramsPrev, logLikelihoodPrev, acceptPrev) = do
   (logLikelihoodProp, _) <- predicteds (g' (f paramsProp) g d) ips iws as
   let logLikelihoodDiff = logLikelihoodProp - logLikelihoodPrev
 
-  $(logTM) InfoS (logStr (" Log likelihood prop = " ++ (L.unpack $ format (fixed 2) logLikelihoodProp) ++
+  $(logTM) InfoS (logStr ("Log likelihood prop = "  ++ (L.unpack $ format (fixed 2) logLikelihoodProp) ++
                           " Log likelihood prev = " ++ (L.unpack $ format (fixed 2) logLikelihoodPrev) ++
-                          " logLikelihoodDiff = " ++ (L.unpack $ format (fixed 2) logLikelihoodDiff)))
+                          " log likelihood diff = " ++ (L.unpack $ format (fixed 2) logLikelihoodDiff)))
   let logPriorCurr = R.logPdf dist paramsPrev
       logPriorProp = R.logPdf dist paramsProp
       logPriorDiff = logPriorProp - logPriorCurr
-  $(logTM) InfoS (logStr (show logPriorCurr ++ " " ++
-                          show logPriorProp ++ " " ++
-                          show logPriorDiff))
+  $(logTM) InfoS (logStr ("Log Prior prev = "  ++ (L.unpack $ format (fixed 2) logPriorCurr) ++
+                          " Log prior prop = " ++ (L.unpack $ format (fixed 2) logPriorProp) ++
+                          " Log prior diff = " ++ (L.unpack $ format (fixed 2) logPriorDiff)))
   let acceptance_prob = exp (logPriorDiff + logLikelihoodDiff)
 
   r <- R.sample $ R.uniform 0.0 1.0
@@ -152,3 +154,6 @@ pmh f g d dist ips as s bigN = unfoldM h (s, 0)
              | otherwise = do t <- pmhOneStep f g d dist ips as u
                               return $ Just ((t, n + 1), (t, n + 1))
 
+myBracketFormat :: LogItem a => ItemFormatter a
+myBracketFormat _withColor _verb Item {..} =
+    unLogStr _itemMessage

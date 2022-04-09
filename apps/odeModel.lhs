@@ -375,7 +375,7 @@ FIXME: Include code here
 
 > main :: IO ()
 > main = do
->   handleScribe <- mkHandleScribe ColorIfTerminal stderr (permitItem DebugS) V2
+>   handleScribe <- mkHandleScribeWithFormatter myBracketFormat ColorIfTerminal stderr (permitItem DebugS) V2
 >   logEnv <- registerScribe "stderr" handleScribe defaultScribeSettings =<< initLogEnv "test" "devel"
 >   r <- runKatipContextT logEnv (mempty :: LogContexts) mempty preMainK
 >   print r
