@@ -281,6 +281,8 @@ function pmh(g, P, N, K, μ, var, actuals, R)
         print(" Proposed state of the Markov chain: ", theta_prop, "\n");
         print(" Current posterior mean: ", mean(theta[:, 1:k], dims = 2), "\n");
         print(" Current acceptance: ", mean(prop_acc[1:k]), "\n");
+        print(" Log likelihood prev: ", log_likelihood_curr, " Log likelihood prop: ", log_likelihood_prop, " Log likelihood diff: ", log_likelihood_diff, "\n");
+        print(" Log prior prev: ", log_prior_curr, " Log prior prop: ", log_prior_prop, " Log prior diff: ", log_prior_diff, "\n");
         print("#####################################################################\n");
     end
 end

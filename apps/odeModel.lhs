@@ -79,7 +79,7 @@ A Deterministic Haskell Model
 > import           Prelude hiding (putStr, writeFile)
 >
 > import           Katip
-> import           Katip.Monadic
+> import           Katip.Monadic ()
 > import           System.IO
 >
 > import qualified Data.Vector.Storable as VS
@@ -217,14 +217,6 @@ Define the actual ODE problem itself (FIXME: we can hide a lot more of the unnec
 >     initI = realToFrac (sirStateI $ sirS' ps)
 >     initR = realToFrac (sirStateR $ sirS' ps)
 
-> sol :: MonadIO m =>
->        (a -> b -> OdeProblem) -> b -> a -> m (Matrix Double)
-> sol s ps ts = do
->   x <- runNoLoggingT $ solve (defaultOpts $ ARKMethod SDIRK_5_3_4) (s ts ps)
->   case x of
->     Left e  -> error $ show e
->     Right y -> return (solutionMatrix y)
-
 > solK :: (MonadIO m, Katip m) =>
 >         (a -> b -> OdeProblem) -> b -> a -> m (Matrix Double)
 > solK s ps ts = do
@@ -245,17 +237,22 @@ We can now run the model and compare its output to the actuals.
 
 > testSolK :: (MonadIO m, KatipContext m) => m [Double]
 > testSolK = do
->   $(logTM) InfoS "Hello from Katip!"
 >   m <- solK sir (Sir (SirState 762 1 0) (SirParams 0.2 10.0 0.5)) (vector us)
 >   let n = tr m
 >   return $ toList (n!1)
 
 > testSolK' :: (MonadIO m, KatipContext m) => m [Double]
 > testSolK' = do
->   $(logTM) InfoS "Hello from Katip!"
 >   m <- solK' sir' (Sir' (SirState 762 1 0) (SirParams' 4.0 0.5)) (vector us)
 >   let n = tr m
 >   return $ toList (n!1)
+
+> testSolK'' :: (MonadIO m, KatipContext m) => m [Double]
+> testSolK'' = do
+>   m <- solK' sir' (Sir' (SirState 762 1 0) (SirParams' 3.2 0.55)) (vector us)
+>   let n = tr m
+>   return $ toList (n!1)
+
 
 ![](diagrams/modelActuals.png)
 
@@ -347,10 +344,10 @@ G(x,t;p) &\triangleq \begin{bmatrix}
 \end{aligned}
 $$
 
-> topF :: (MonadIO m, R.StatefulGen g m, MonadReader g m) =>
->          SirParams -> SirState -> m SirState
+> topF :: (MonadIO m, R.StatefulGen g m, MonadReader g m, Katip m) =>
+>          SirParams' -> SirState -> m SirState
 > topF ps qs = do
->   m <- sol sir (Sir qs ps) [0.0, 1.0]
+>   m <- solK' sir' (Sir' qs ps) [0.0, 1.0]
 >   newS <- R.sample (normal (log (m!1!0)) 0.1)
 >   newI <- R.sample (normal (log (m!1!1)) 0.1)
 >   newR <- R.sample (normal (log (m!1!2)) 0.1)
@@ -408,16 +405,27 @@ We can finally run the model against the data and plot the results.
 
 FIXME: Include code here
 
-> preMainK :: forall m c1 z1 . (KatipContext m, Show c1, Show z1, Num z1, Ord z1, Num c1) => m [((SirParams, Double, c1), z1)]
+> params :: SirParams'
+> params = SirParams' 3.0 0.4
+
+> preMainK :: forall m c1 z1 . (KatipContext m, Show c1, Show z1, Num z1, Ord z1, Num c1) => m [((SirParams', Double, c1), z1)]
 > preMainK = do
 >   q <- testSolK
 >   r <- testSolK'
->   liftIO $ chart (zip us actuals) [q, r] "diagrams/modelActuals.png"
->   return $ error "You are here"
+>   s <- testSolK''
+>   liftIO $ chart (zip us actuals) [q, r, s] "diagrams/modelActuals.png"
+>
+>   setStdGen (mkStdGen 42)
+>   g <- newStdGen
+>   stdGen <- newIOGenM g
+>   ps <- runReaderT (predicteds (g' (topF params) topG topD) initParticles initWeights (map Observed actuals)) stdGen
+>   let qs :: [[Double]]
+>       qs = transpose $ map (map sirStateI) $ snd ps
+>   liftIO $ chart (zip us q) qs "diagrams/generateds.png"
+>   bar <- runReaderT (pmh topF topG topD (SirParamsD' params 0.05 0.05) sirParamsUpd initParticles (map Observed actuals) (params, fst ps, 0.0) 10) stdGen
+>   return bar
 
-  setStdGen (mkStdGen 42)
-  g <- newStdGen
-  stdGen <- newIOGenM g
+
   ps <- runReaderT (predicteds (g' (topF (SirParams 0.2 10.0 0.5)) topG topD) initParticles initWeights (map Observed actuals)) stdGen
   $(logTM) InfoS (logStr $ show $ fst ps)
   let qs :: [[Double]]
@@ -437,6 +445,7 @@ FIXME: Include code here
 > data family SirParamsD k :: Type
 
 > data instance SirParamsD SirParams = SirParamsD SirParams Double Double Double
+> data instance SirParamsD SirParams' = SirParamsD' SirParams' Double Double
 
 > instance R.Distribution SirParamsD SirParams where
 >   rvar (SirParamsD mu sigmaBeta sigmaC sigmaGamma) = do
@@ -448,12 +457,22 @@ FIXME: Include code here
 >                        , sirParamsGamma = g
 >                        }
 >
-> instance R.PDF SirParamsD SirParams where
->   logPdf (SirParamsD mu sigmaBeta sigmaC sigmaGamma) t = b + c + g
+> instance R.Distribution SirParamsD SirParams' where
+>   rvar (SirParamsD' mu sigmaR0 sigmaKappa) = do
+>     b <- R.rvar $ Normal (sirParamsR0 mu)    sigmaR0
+>     c <- R.rvar $ Normal (sirParamsKappa mu) sigmaKappa
+>     return $ SirParams' { sirParamsR0    = b
+>                         , sirParamsKappa = c
+>                         }
+>
+> instance R.PDF SirParamsD SirParams' where
+>   logPdf (SirParamsD' mu sigmaR0 sigmaKappa) t = b + c
 >     where
->       b = R.logPdf (Normal (sirParamsBeta mu)  sigmaBeta)  (sirParamsBeta t)
->       c = R.logPdf (Normal (sirParamsC mu)     sigmaC)     (sirParamsC t)
->       g = R.logPdf (Normal (sirParamsGamma mu) sigmaGamma) (sirParamsGamma t)
+>       b = R.logPdf (Normal (sirParamsR0 mu)    sigmaR0)    (sirParamsR0 t)
+>       c = R.logPdf (Normal (sirParamsKappa mu) sigmaKappa) (sirParamsKappa t)
+
+> sirParamsUpd :: SirParams' -> SirParamsD SirParams' -> SirParamsD SirParams'
+> sirParamsUpd p (SirParamsD' _ sigmaR0 sigmaKappa) = SirParamsD' p sigmaR0 sigmaKappa
 
 
 ![](diagrams/predicteds.png)

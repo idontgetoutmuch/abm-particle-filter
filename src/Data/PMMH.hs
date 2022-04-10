@@ -105,34 +105,39 @@ pmhOneStep :: (MonadReader g m, StatefulGen g m, KatipContext m,
            -> (a2 -> b)
            -> (b -> b -> Double)
            -> d a1
+           -> (a1 -> d a1 -> d a1)
            -> [a2]
            -> [b]
            -> (a1, Double, c)
            -> m (a1, Double, c)
-pmhOneStep f g d dist ips as (paramsPrev, logLikelihoodPrev, acceptPrev) = do
+pmhOneStep f g d dist distUpd ips as (paramsPrev, logLikelihoodPrev, acceptPrev) = do
   $(logTM) InfoS (logStr (show acceptPrev))
   let bigN = length ips
   let iws = replicate bigN (recip $ fromIntegral bigN)
-  paramsProp <- R.sample dist
+  paramsProp <- R.sample $ distUpd paramsPrev dist
+
   -- FIXME: I am not convinced predicted are predicted
-  $(logTM) InfoS (logStr $ show paramsPrev)
-  $(logTM) InfoS (logStr $ show paramsProp)
+
+  $(logTM) InfoS (logStr ("Current state:  " ++ show paramsPrev))
+  $(logTM) InfoS (logStr ("Proposed state: " ++ show paramsProp))
+
   (logLikelihoodProp, _) <- predicteds (g' (f paramsProp) g d) ips iws as
   let logLikelihoodDiff = logLikelihoodProp - logLikelihoodPrev
 
   $(logTM) InfoS (logStr ("Log likelihood prop = "  ++ (L.unpack $ format (fixed 2) logLikelihoodProp) ++
                           " Log likelihood prev = " ++ (L.unpack $ format (fixed 2) logLikelihoodPrev) ++
                           " log likelihood diff = " ++ (L.unpack $ format (fixed 2) logLikelihoodDiff)))
+
   let logPriorCurr = R.logPdf dist paramsPrev
       logPriorProp = R.logPdf dist paramsProp
       logPriorDiff = logPriorProp - logPriorCurr
+
   $(logTM) InfoS (logStr ("Log Prior prev = "  ++ (L.unpack $ format (fixed 2) logPriorCurr) ++
                           " Log prior prop = " ++ (L.unpack $ format (fixed 2) logPriorProp) ++
                           " Log prior diff = " ++ (L.unpack $ format (fixed 2) logPriorDiff)))
+
   let acceptance_prob = exp (logPriorDiff + logLikelihoodDiff)
-
   r <- R.sample $ R.uniform 0.0 1.0
-
   if r < acceptance_prob
     then return (paramsProp, logLikelihoodProp, acceptPrev + 1)
     else return (paramsPrev, logLikelihoodPrev, acceptPrev)
@@ -143,15 +148,16 @@ pmh :: forall g m c z p b d a . (MonadReader g m, StatefulGen g m, KatipContext 
     -> (a -> b)
     -> (b -> b -> Double)
     -> d p
+    -> (p -> d p -> d p)
     -> [a]
     -> [b]
     -> (p, Double, c)
     -> z
     -> m [((p, Double, c), z)]
-pmh f g d dist ips as s bigN = unfoldM h (s, 0)
+pmh f g d dist distUpd ips as s bigN = unfoldM h (s, 0)
   where
     h (u, n) | n >= bigN = return Nothing
-             | otherwise = do t <- pmhOneStep f g d dist ips as u
+             | otherwise = do t <- pmhOneStep f g d dist distUpd ips as u
                               return $ Just ((t, n + 1), (t, n + 1))
 
 myBracketFormat :: LogItem a => ItemFormatter a
