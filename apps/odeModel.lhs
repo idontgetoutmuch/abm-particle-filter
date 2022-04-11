@@ -422,7 +422,7 @@ FIXME: Include code here
 >   let qs :: [[Double]]
 >       qs = transpose $ map (map sirStateI) $ snd ps
 >   liftIO $ chart (zip us q) qs "diagrams/generateds.png"
->   bar <- runReaderT (pmh topF topG topD (SirParamsD' params 0.05 0.05) sirParamsUpd initParticles (map Observed actuals) (params, fst ps, 0.0) 10) stdGen
+>   bar <- runReaderT (pmh topF topG topD (SirParamsD params 0.05 0.05) sirParamsUpd initParticles (map Observed actuals) (params, fst ps, 0.0) 10) stdGen
 >   return bar
 
 
@@ -444,21 +444,10 @@ FIXME: Include code here
 
 > data family SirParamsD k :: Type
 
-> data instance SirParamsD SirParams = SirParamsD SirParams Double Double Double
-> data instance SirParamsD SirParams' = SirParamsD' SirParams' Double Double
+> data instance SirParamsD SirParams' = SirParamsD SirParams' Double Double
 
-> instance R.Distribution SirParamsD SirParams where
->   rvar (SirParamsD mu sigmaBeta sigmaC sigmaGamma) = do
->     b <- R.rvar $ Normal (sirParamsBeta mu)  sigmaBeta
->     c <- R.rvar $ Normal (sirParamsC mu)     sigmaC
->     g <- R.rvar $ Normal (sirParamsGamma mu) sigmaGamma
->     return $ SirParams { sirParamsBeta  = b
->                        , sirParamsC     = c
->                        , sirParamsGamma = g
->                        }
->
 > instance R.Distribution SirParamsD SirParams' where
->   rvar (SirParamsD' mu sigmaR0 sigmaKappa) = do
+>   rvar (SirParamsD mu sigmaR0 sigmaKappa) = do
 >     b <- R.rvar $ Normal (sirParamsR0 mu)    sigmaR0
 >     c <- R.rvar $ Normal (sirParamsKappa mu) sigmaKappa
 >     return $ SirParams' { sirParamsR0    = b
@@ -466,13 +455,13 @@ FIXME: Include code here
 >                         }
 >
 > instance R.PDF SirParamsD SirParams' where
->   logPdf (SirParamsD' mu sigmaR0 sigmaKappa) t = b + c
+>   logPdf (SirParamsD mu sigmaR0 sigmaKappa) t = b + c
 >     where
 >       b = R.logPdf (Normal (sirParamsR0 mu)    sigmaR0)    (sirParamsR0 t)
 >       c = R.logPdf (Normal (sirParamsKappa mu) sigmaKappa) (sirParamsKappa t)
 
 > sirParamsUpd :: SirParams' -> SirParamsD SirParams' -> SirParamsD SirParams'
-> sirParamsUpd p (SirParamsD' _ sigmaR0 sigmaKappa) = SirParamsD' p sigmaR0 sigmaKappa
+> sirParamsUpd p (SirParamsD _ sigmaR0 sigmaKappa) = SirParamsD p sigmaR0 sigmaKappa
 
 
 ![](diagrams/predicteds.png)

@@ -1,6 +1,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE FlexibleContexts    #-}
 
 {-# OPTIONS_GHC -Wall              #-}
 {-# OPTIONS_GHC -Wno-type-defaults #-}
@@ -15,7 +16,6 @@ module Data.PMMH (
   , myBracketFormat
   ) where
 
-import           System.Random
 import           System.Random.Stateful
 import           Data.Maybe (catMaybes)
 import           Data.List (unfoldr)
@@ -23,30 +23,31 @@ import           Distribution.Utils.MapAccum
 import           Control.Monad.Reader
 import           Control.Monad.Extra
 import qualified Data.Random as R
-import           Katip
 
-import Formatting
+import           Katip
+import           Formatting
 import qualified Data.Text.Lazy as L
 
-resampleStratified :: (UniformRange d, Ord d, Fractional d) => [d] -> [Int]
-resampleStratified weights = catMaybes $ unfoldr coalg (0, 0)
-  where
-    bigN      = length weights
-    positions = map (/ (fromIntegral bigN)) $
-                -- FIXME: the generator should be configurable
-                zipWith (+) (take bigN . unfoldr (Just . uniformR (0.0, 1.0)) $ mkStdGen 23)
-                            (map fromIntegral [0 .. bigN - 1])
-    cumulativeSum = scanl (+) 0.0 weights
-    coalg (i, j) | i < bigN =
-                     if (positions!!i) < (cumulativeSum!!j)
-                     then Just (Just j, (i + 1, j))
-                     else Just (Nothing, (i, j + 1))
-                 | otherwise =
-                     Nothing
+
+resampleStratified :: (StatefulGen g m, MonadReader g m, R.Distribution R.Uniform a, Fractional a, Ord a) =>
+                       [a] -> m [Int]
+resampleStratified weights = do
+  let bigN = length weights
+  dithers <- replicateM bigN (R.sample $ R.uniform 0.0 1.0)
+  let positions = map (/ (fromIntegral bigN)) $
+                  zipWith (+) dithers (map fromIntegral [0 .. bigN - 1])
+      cumulativeSum = scanl (+) 0.0 weights
+      coalg (i, j) | i < bigN =
+                       if (positions!!i) < (cumulativeSum!!j)
+                       then Just (Just j, (i + 1, j))
+                       else Just (Nothing, (i, j + 1))
+                   | otherwise =
+                       Nothing
+  return $ catMaybes $ unfoldr coalg (0, 0)
 
 type Particles a = [a]
 
-pf :: forall m a b d . (Monad m, Floating d, Ord d, UniformRange d) =>
+pf :: forall m g a b d . (StatefulGen g m, MonadReader g m, R.Distribution R.Uniform d, Ord d, Num d, Floating d) =>
       Particles a ->
       (a -> m a) ->
       (a -> b) ->
@@ -62,8 +63,8 @@ pf statePrev f g d log_w y = do
       swn  = sum wn
       wn'  = map (/ swn) wn
 
-  let b              = resampleStratified wn'
-      a              = map (\i -> i - 1) b
+  b <- resampleStratified wn'
+  let a              = map (\i -> i - 1) b
       stateResampled = map (\i -> statePrev!!(a!!i)) [0 .. bigN - 1]
 
   statePredicted <- mapM f stateResampled
@@ -80,7 +81,7 @@ pf statePrev f g d log_w y = do
 
   return (obsPredicted, ds, predictiveLikelihood, statePredicted)
 
-g' :: (Monad m, Floating c, Ord c, UniformRange c, Fractional b) =>
+g' :: forall g m c b a . (StatefulGen g m, MonadReader g m, Floating c, Ord c, R.Distribution R.Uniform c, Fractional b) =>
       (a -> m a)
    -> (a -> b)
    -> (b -> b -> c)
