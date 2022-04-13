@@ -6,13 +6,49 @@ bibliography: references.bib
 Introduction
 ============
 
-Some references for ABMs and inference:
+Suppose you wish to model the outbreak of a disease. The [textbook
+model](https://en.wikipedia.org/wiki/Compartmental_models_in_epidemiology)
+is more or less the one that @1927RSPSA.115 published almost 100 years
+ago. This treats the number of infected individuals as continuous and
+you may prefer to model each individual and how they interact with
+each other. Instead you could use an [Agent Based
+Model](https://en.wikipedia.org/wiki/Agent-based_model) (ABM). Such
+models are very popular for modelling biological processes such as the
+growth of tumours: see e.g. [PhysiCell](http://physicell.org/). Here's
+an example of what such approaches and tools can achieve:
 
- * @Ross2017, @Lima2021, @Christ2021, @Rocha2021
+![](https://a.fsdn.com/con/app/proj/physicell/screenshots/pov00000337.png)
 
-Some references for SMC:
+The evolution of an epidemic and the growth of a tumour will depend on
+various parameters in the model e.g. how much contact does an
+individual have with other individuals or how often does a cancer cell
+divide given the available oxygen. In many models, the likelihood,
+that is the probability of an outcome given the parameters, is
+available computationally and often in a closed form. Agent Based
+Models (ABMs) pose a challenge for statistical inference as the
+likelihood for such models is rarely available. Here's a few
+references to some recent approaches either approximating the
+likelihood or using Approximate Bayesian Computation (ABC): @Ross2017,
+@Lima2021, @Christ2021, @Rocha2021.
 
- * @Dai, @Endo2019, @Dahlin, @Svensson
+But anyone who uses particle filtering will have realised that you
+don't need the likelihood of the state update, you only need to sample
+from it even though most expositions of particle filtering assume that
+this likelihood is available. What gives? It turns out that taking a
+different approach to mathematics behind particle filtering,
+Feynman-Kac models, only makes the assumption that you can sample from
+the state update and likelihood might not even exist (FIXME: check
+this). All the details can be found in @chopin2020introduction and
+further details in @moral2004feynman, @cappé2006inference. Further
+examples of the application of particle filtering or more correctly
+Sequential Monte Carlo (SMC) can be found in @Dai, @Endo2019, @Dahlin,
+@Svensson.
+
+I have put a summary of the mathematics in an appendix. The main body
+of this blog deals with the application of SMC (or particle filtering)
+to an example where the model could be an ABM. I've actually used a
+model based on differential equations purely because I haven't been
+able to find a good ABM library in Haskell.
 
 Example
 =======
