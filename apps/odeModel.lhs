@@ -289,8 +289,7 @@ We can now run the model and compare its output to the actuals.
 >   let n = tr m
 >   return $ toList (n!1)
 
-
-![](diagrams/modelActuals.png)
+![](diagrams/modelActuals.svg)
 
 FIXME: Sadly this does not work and I would rather write the draft
 first and then fight with BlogLiterately.
@@ -449,7 +448,7 @@ FIXME: Include code here
 >   q <- testSolK
 >   r <- testSolK'
 >   s <- testSolK''
->   liftIO $ chart (zip us actuals) [q, r, s] "diagrams/modelActuals.png"
+>   liftIO $ chart (zip us actuals) [q, r, s] "diagrams/modelActuals"
 >
 >   setStdGen (mkStdGen 42)
 >   g <- newStdGen
@@ -457,7 +456,7 @@ FIXME: Include code here
 >   ps <- runReaderT (predicteds (g' (topF params) topG topD) initParticles initWeights (map Observed actuals)) stdGen
 >   let qs :: [[Double]]
 >       qs = transpose $ map (map sirStateI) $ snd ps
->   liftIO $ chart (zip us q) qs "diagrams/generateds.png"
+>   liftIO $ chart (zip us q) qs "diagrams/generateds"
 >   bar <- runReaderT (pmh topF topG topD (SirParamsD params 0.05 0.05) sirParamsUpd initParticles (map Observed actuals) (params, fst ps, 0.0) 10) stdGen
 >   return bar
 
@@ -466,7 +465,7 @@ FIXME: Include code here
   $(logTM) InfoS (logStr $ show $ fst ps)
   let qs :: [[Double]]
       qs = transpose $ map (map sirStateI) $ snd ps
-  liftIO $ chart (zip us q) qs "diagrams/generateds.png"
+  liftIO $ chart (zip us q) qs "diagrams/generateds.svg"
   bar <- runReaderT (pmh topF topG topD (SirParamsD (SirParams 0.2 10.0 0.5) 0.002 0.005 0.002) initParticles (map Observed actuals) (SirParams 0.2 10.0 0.5, fst ps, 0.0) 10) stdGen
   return bar
 
@@ -500,9 +499,9 @@ FIXME: Include code here
 > sirParamsUpd p (SirParamsD _ sigmaR0 sigmaKappa) = SirParamsD p sigmaR0 sigmaKappa
 
 
-![](diagrams/predicteds.png)
+![](diagrams/predicteds.svg)
 
-![](diagrams/generateds.png)
+![](diagrams/generateds.svg)
 
 Estimating the Paramaters via MCMC
 ==================================
@@ -517,7 +516,7 @@ rarely available.
 ```{.stan include=sir_negbin.stan}
 ```
 
-![](diagrams/fakedata.png)
+![](diagrams/fakedata.svg)
 
 Markov Process and Chains
 =========================

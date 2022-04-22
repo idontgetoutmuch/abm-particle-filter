@@ -1,12 +1,12 @@
 let
 
-  pkgs = builtins.fetchTarball {
-    url = "https://github.com/NixOS/nixpkgs/archive/nixpkgs-unstable.tar.gz";
-    sha256 = "0v3c4r8v40jimicdxqvxnzmdypnafm2baam7z131zk6ljhb8jpg9";
-};
+#   pkgs = builtins.fetchTarball {
+#     url = "https://github.com/NixOS/nixpkgs/archive/nixpkgs-unstable.tar.gz";
+#     sha256 = "sha256:0x5j9q1vi00c6kavnjlrwl3yy1xs60c34pkygm49dld2sgws7n0a";
+# };
 
 myHaskellPackageOverlay = self: super: {
-  myHaskellPackages = super.haskell.packages.ghc921.override {
+  myHaskellPackages = super.haskell.packages.ghc922.override {
     overrides = hself: hsuper: rec {
 
       hmatrix-sundials = super.haskell.lib.dontCheck (
@@ -34,6 +34,19 @@ myHaskellPackageOverlay = self: super: {
           sha256 = "sha256-ixHWZae6AxjRUldMgpYolXBGsOUT5ZVIw9HZkxrhHQ0=";
         } { }) [ ];
 
+      singletons-th = self.haskell.lib.addBuildDepends(
+        hself.callHackageDirect {
+          pkg = "singletons-th";
+          ver = "3.1";
+          sha256 = "sha256-34nyestxt8KNTSlmr1Y8nElNXa/wZ1+fuLEUVjZX8dk=";
+        } { }) [ ];
+
+      retry = self.haskell.lib.dontCheck hsuper.retry;
+
+      Chart = self.haskell.lib.doJailbreak hsuper.Chart;
+
+      size-based = self.haskell.lib.doJailbreak hsuper.size-based;
+
       random-fu = super.haskell.lib.dontCheck (
         hself.callCabal2nixWithOptions "random-fu" (builtins.fetchGit {
           url = "https://github.com/haskell-numerics/random-fu";
@@ -52,7 +65,7 @@ myHaskellPackageOverlay = self: super: {
 
 in
 
-{ nixpkgs ? import pkgs {
+{ nixpkgs ? import <nixpkgs> {
   config.allowBroken = true;
   config.allowUnsupportedSystem = true;
   overlays = [ myHaskellPackageOverlay ]; }
@@ -95,6 +108,9 @@ let
     mtl
     formatting
     katip
+    Chart
+    Chart-diagrams
+    diagrams-svg
   ];
 
   # FIXME: One day I will be able to use julia with nix

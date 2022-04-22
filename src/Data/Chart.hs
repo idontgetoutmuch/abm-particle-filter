@@ -6,53 +6,39 @@
 {-# OPTIONS_GHC -Wno-type-defaults #-}
 
 module Data.Chart (
-  chart,
-  dendro
+  chart
   ) where
 
 import System.FilePath ()
-import Data.Int
+import Data.Colour
+import Control.Lens hiding ( (#) )
+import Graphics.Rendering.Chart hiding ( translate )
+import Graphics.Rendering.Chart.Backend.Diagrams
+import Diagrams.Backend.SVG.CmdLine
+import Diagrams.Prelude hiding ( sample, render )
+import System.Environment
 
-import qualified Language.R as R
-import qualified Language.R.QQ as R
-import           Control.Monad (foldM)
+chart3 :: [(Double, Double)] -> [[Double]] -> Graphics.Rendering.Chart.Renderable ()
+chart3 xs yss = toRenderable layout
+  where
+    sinusoid0 = plot_lines_values .~ [xs]
+              $ plot_lines_style  .  line_color .~ opaque blue
+              $ plot_lines_title  .~ "Temperature = 1.0"
+              $ def
 
--- | Not as useful as I thought it would be
-dendro :: [[Int32]] -> FilePath -> IO ()
-dendro xss fn = do
-    R.runRegion $ do
-      _ <- [R.r| library(ggplot2) |]
-      _ <- [R.r| library(tidyverse) |]
-      _ <- [R.r| library(igraph) |]
-      _ <- [R.r| library(ggraph) |]
-      _ <- [R.r| library(smcsamplers) |]
-      empty <- [R.r| list() |]
-      pN <- foldM (\s x -> do [R.r| append(s_hs, list(x_hs)) |]) empty xss
-      q <- [R.r| ahistory2genealogy(pN_hs) |]
-      m <- [R.r| mygraph <- graph_from_data_frame(q_hs$dendro) |]
-      g <- [R.r| ggraph(m_hs, layout = 'dendrogram', circular = F) + geom_edge_hive(edge_width = 0.2) + theme_void() + coord_flip() + scale_y_reverse() |]
-      _ <- [R.r| png(filename=fn_hs) |]
-      _ <- [R.r| print(g_hs) |]
-      _ <- [R.r| dev.off() |]
-      return ()
-    return ()
+    sinusoids zs = plot_lines_values .~ [zs]
+              $ plot_lines_style  .  line_color .~ opaque black
+              $ def
 
-chart :: [(Double, Double)] -> [[Double]] -> FilePath -> IO ()
+    layout = layout_title .~ "Boltzmann Distribution"
+           $ layout_x_axis . laxis_generate .~ scaledAxis def (0,20)
+           $ layout_plots .~ [toPlot sinusoid0
+                             ] ++ map (toPlot . sinusoids . (zip (map fst xs))) yss
+           $ def
+
+chart :: [(Double, Double)] -> [[Double]] -> [Char] -> IO ()
 chart xs yss fn = do
-  R.runRegion $ do
-    _ <- [R.r| library(ggplot2) |]
-    let actuals1 = map snd xs
-        us       = map fst xs
-    p0 <- [R.r| ggplot() |]
-    df <- [R.r| data.frame(x = actuals1_hs, t = us_hs) |]
-    p1 <-  [R.r| p0_hs + geom_line(data = df_hs, aes(x = t, y = x), colour="blue") |]
-    pN <- foldM
-      (\m f -> do dg <- [R.r| data.frame(x = f_hs, t = us_hs) |]
-                  [R.r| m_hs +
-                        geom_line(data = dg_hs, linetype = "dotted",
-                                  aes(x = t, y = x)) |]) p1 yss
-    _ <- [R.r| png(filename=fn_hs) |]
-    _ <- [R.r| print(pN_hs) |]
-    _ <- [R.r| dev.off() |]
-    return ()
-  return ()
+  denv <- defaultEnv vectorAlignmentFns 500 500
+  let dia :: Diagram B
+      dia = fst $ runBackend denv ((render (chart3 xs yss)) (500, 500))
+  withArgs ["-o" ++ fn ++ ".svg"] (mainWith dia)

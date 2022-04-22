@@ -35,7 +35,15 @@ library
         vector,
         formatting,
         text,
-        katip
+        katip,
+        Chart,
+        Chart-diagrams,
+        diagrams-lib,
+        colour,
+        data-default-class,
+        lens,
+        diagrams-svg,
+        optparse-applicative
 
 executable ode-model
   main-is:             odeModel.lhs
