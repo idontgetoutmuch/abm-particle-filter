@@ -54,14 +54,26 @@ Example
 =======
 
 The Susceptible / Infected / Recovered (SIR) model has three
-parameters: one describing how infectious the pathogen is, one
-describing how much contact a host has with other hosts and one
-describing how quickly a host recovers.
+parameters: one describing how infectious the pathogen is ($\beta$), one
+describing how much contact a host has with other hosts ($c$) and one
+describing how quickly a host recovers ($\gamma$).
 
 $$
 \begin{aligned}
-\frac{d S}{d t} &=-\beta S \frac{I}{N} \\
-\frac{d I}{d t} &=\beta S \frac{I}{N}-\gamma I \\
+\frac{d S}{d t} &=-c \beta S \frac{I}{N} \\
+\frac{d I}{d t} &=c \beta S \frac{I}{N}-\gamma I \\
+\frac{d R}{d t} &=\gamma I
+\end{aligned}
+$$
+
+The infectivity rate and the contact rate are always used as $c\beta$
+and are thus non-identifiable so we can replace this product with a
+single parameter $\alpha = c\beta$).
+
+$$
+\begin{aligned}
+\frac{d S}{d t} &=-\alpha S \frac{I}{N} \\
+\frac{d I}{d t} &=\alpha S \frac{I}{N}-\gamma I \\
 \frac{d R}{d t} &=\gamma I
 \end{aligned}
 $$
@@ -137,11 +149,6 @@ A Deterministic Haskell Model
 
 Basic Reproduction Number
 -------------------------
-
-Define the state and parameters for the model (FIXME: the infectivity
-rate and the contact rate are always used as $c\beta$ and are thus
-non-identifiable - I should probably just write the model with a
-single parameter $\alpha = c\beta$).
 
 If $\beta$ were constant, then $R_0 \triangleq \beta / \gamma$ would
 also be constant: the famous *basic reproduction number* for the SIR
@@ -448,7 +455,7 @@ FIXME: Include code here
 >   q <- testSolK
 >   r <- testSolK'
 >   s <- testSolK''
->   liftIO $ chart (zip us actuals) [q, r, s] "diagrams/modelActuals"
+>   liftIO $ chart "Actuals" (zip us actuals) [q, r, s] "diagrams/modelActuals"
 >
 >   setStdGen (mkStdGen 42)
 >   g <- newStdGen
@@ -456,7 +463,7 @@ FIXME: Include code here
 >   ps <- runReaderT (predicteds (g' (topF params) topG topD) initParticles initWeights (map Observed actuals)) stdGen
 >   let qs :: [[Double]]
 >       qs = transpose $ map (map sirStateI) $ snd ps
->   liftIO $ chart (zip us q) qs "diagrams/generateds"
+>   liftIO $ chart "Generated" (zip us q) qs "diagrams/generateds"
 >   bar <- runReaderT (pmh topF topG topD (SirParamsD params 0.05 0.05) sirParamsUpd initParticles (map Observed actuals) (params, fst ps, 0.0) 10) stdGen
 >   return bar
 
@@ -547,7 +554,7 @@ $$
 It can be shown that
 
 $$
-\mathbb{P}_T(X_t \in \mathrm{d}x_t \,|\, X_{0:t-1} = x_{0:t-1}) = \mathbb{P}_T(X_t \in \mathrm{d}x_t, X_{t-1} = x_{t-1}) = K_t(x_{t-1}, \mathrm{d}x_t)
+\mathbb{P}_T(X_t \in \mathrm{d}x_t \,|\, X_{0:t-1} = x_{0:t-1}) = \mathbb{P}_T(X_t \in \mathrm{d}x_t \,|\, X_{t-1} = x_{t-1}) = K_t(x_{t-1}, \mathrm{d}x_t)
 $$
 
 and this is often used as the defintion of a (discrete-time) Markov Process.
@@ -557,13 +564,25 @@ We define a hidden Markov model as a $(\mathbb{X} \times \mathbb{Y}, X \otimes \
 Markov process $\left(X_{n}, Y_{n}\right)_{n \geq 0}$ whose joint distribution is given by
 
 $$
-\mathbb{P}_T(X_{0:T} \in {\mathrm d}x_{0:T}, Y_{0:T} \in {\mathrm d}y_{0:T}) = \mathbb{P}_0(\mathrm{d}x_0)F_s(x_{0}, \mathrm{d}y_0)\prod_{s = 1}^T K_s(x_{s - 1}, \mathrm{d}x_s) F_s(x_{s}, \mathrm{d}y_s)
+\mathbb{P}_T(X_{0:T} \in {\mathrm d}x_{0:T}, Y_{0:T} \in {\mathrm d}y_{0:T}) = \mathbb{P}_0(\mathrm{d}x_0)F_0(x_{0}, \mathrm{d}y_0)\prod_{s = 1}^T K_s(x_{s - 1}, \mathrm{d}x_s) F_s(x_{s}, \mathrm{d}y_s)
 $$
 
-Writing $\mathbb{Q}_0(\mathrm{d}x_0, \mathrm{d}y_0) = \mathbb{P}_0(\mathrm{d}x_0) F_0(x_0, \mathrm{d}y_0)$ and $L _t((x_{t-1}, y_{t-1}), (\mathrm{d}x_t, \mathrm{d}y_t)) = K_t(x_{t - 1}, \mathrm{d}x_t) F_t(x_{t}, \mathrm{d}y_t)$ we see that this is really is a Markov process:
+Writing
+$$
+\mathbb{Q}_0(\mathrm{d}x_0, \mathrm{d}y_0) = \mathbb{P}_0(\mathrm{d}x_0) F_0(x_0, \mathrm{d}y_0)
+$$
+and
+$$
+L _t((x_{t-1}, y_{t-1}), (\mathrm{d}x_t, \mathrm{d}y_t)) = K_t(x_{t - 1}, \mathrm{d}x_t) F_t(x_{t}, \mathrm{d}y_t)
+$$
+we see that this is really is a Markov process:
 
 $$
-\mathbb{P}_T(X_{0:T} \in {\mathrm d}x_{0:T}, Y_{0:T} \in {\mathrm d}y_{0:T}) = \mathbb{P}_0(\mathrm{d}x_0)F_0(x_0, \mathrm{d}y_0)\prod_{s = 1}^T K_s(x_{s - 1}, \mathrm{d}x_s) F_s(x_{s}, \mathrm{d}y_s) = \mathbb{Q}_0(\mathrm{d}x_0, \mathrm{d}y_0)\prod_{s = 1}^T L_s((x_{s - 1}, y_{s - 1}), (\mathrm{d}x_s, \mathrm{d}y_s))
+\begin{aligned}
+\mathbb{P}_T(X_{0:T} \in {\mathrm d}x_{0:T}, Y_{0:T} \in {\mathrm d}y_{0:T}) &=
+\mathbb{P}_0(\mathrm{d}x_0)F_0(x_0, \mathrm{d}y_0)\prod_{s = 1}^T K_s(x_{s - 1}, \mathrm{d}x_s) F_s(x_{s}, \mathrm{d}y_s) \\
+&= \mathbb{Q}_0(\mathrm{d}x_0, \mathrm{d}y_0)\prod_{s = 1}^T L_s((x_{s - 1}, y_{s - 1}), (\mathrm{d}x_s, \mathrm{d}y_s))
+\end{aligned}
 $$
 
 We make the usual assumption that
@@ -587,7 +606,7 @@ $$
 We can write
 
 $$
-\mathbb{P}_t(X_{0:t} \in \mathrm{d}x_{0:t} \,|\, Y_{0:t} = y_{0:t}) = \frac{1}{p_t(y_{0:t})}\Bigg[\prod_{s=0}^t f(x_s, y_s)\Bigg]\mathbb{P}_t(\mathrm{d}_{0:t})
+\mathbb{P}_t(X_{0:t} \in \mathrm{d}x_{0:t} \,|\, Y_{0:t} = y_{0:t}) = \frac{1}{p_t(y_{0:t})}\Bigg[\prod_{s=0}^t f(x_s, y_s)\Bigg]\mathbb{P}_t(\mathrm{d}x_{0:t})
 $$
 
 We can generalise this. Let us start by with a Markov process
@@ -651,12 +670,12 @@ Then using extension and marginalising we have
 
 $$
 \mathbb{P}_{t-1}\left(X_{t} \in \mathrm{d} x_{t} \mid Y_{0: t-1}=y_{0: t-1}\right)
-=\int_{x_{t-1} \in \mathcal{X}} K_{t}\left(x_{t-1}, \mathrm{~d} x_{t}\right) \mathbb{P}_{t}\left(X_{t-1} \in \mathrm{d} x_{t-1} \mid Y_{0: t-1}=y_{0: t-1}\right)
+=\int_{x_{t-1} \in \mathcal{X}} K_{t}\left(x_{t-1}, \mathrm{~d} x_{t}\right) \mathbb{P}_{t-1}\left(X_{t-1} \in \mathrm{d} x_{t-1} \mid Y_{0: t-1}=y_{0: t-1}\right)
 $$
 
 And using change of measure and marginalising we have
 $$
-\mathbb{P}_{t}\left(X_{t} \in \mathrm{d} x_{t} \mid Y_{0: t-1}=y_{0: t-1}\right)=\frac{1}{\ell_{t}} f_{t}\left(x_{t}, y_{t}\right) \mathbb{P}_{t-1}\left(X_{t} \in \mathrm{d} x_{t} \mid Y_{0: t-1}=y_{0: t-1}\right)
+\mathbb{P}_{t}\left(X_{t} \in \mathrm{d} x_{t} \mid Y_{0: t}=y_{0: t}\right)=\frac{1}{\ell_{t}} f_{t}\left(x_{t}, y_{t}\right) \mathbb{P}_{t-1}\left(X_{t} \in \mathrm{d} x_{t} \mid Y_{0: t-1}=y_{0: t-1}\right)
 $$
 
 If we define an operator $P$ on measures as:

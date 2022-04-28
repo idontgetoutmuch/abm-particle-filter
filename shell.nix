@@ -5,6 +5,14 @@ let
 #     sha256 = "sha256:0x5j9q1vi00c6kavnjlrwl3yy1xs60c34pkygm49dld2sgws7n0a";
 # };
 
+pkgs= builtins.fetchGit {
+  # Descriptive name to make the store path easier to identify
+  name = "nixos-unstable-2018-09-12";
+  url = "https://github.com/nixos/nixpkgs/";
+  ref = "refs/heads/master";
+  rev = "fe237597d151a33b6aab54f1f5a0af6353c74d04";
+};
+
 myHaskellPackageOverlay = self: super: {
   myHaskellPackages = super.haskell.packages.ghc922.override {
     overrides = hself: hsuper: rec {
@@ -65,7 +73,7 @@ myHaskellPackageOverlay = self: super: {
 
 in
 
-{ nixpkgs ? import <nixpkgs> {
+{ nixpkgs ? import pkgs {
   config.allowBroken = true;
   config.allowUnsupportedSystem = true;
   overlays = [ myHaskellPackageOverlay ]; }
