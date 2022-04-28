@@ -1,12 +1,20 @@
 let
 
-  pkgs = builtins.fetchTarball {
-    url = "https://github.com/NixOS/nixpkgs/archive/nixpkgs-unstable.tar.gz";
-    sha256 = "0v3c4r8v40jimicdxqvxnzmdypnafm2baam7z131zk6ljhb8jpg9";
+#   pkgs = builtins.fetchTarball {
+#     url = "https://github.com/NixOS/nixpkgs/archive/nixpkgs-unstable.tar.gz";
+#     sha256 = "sha256:0x5j9q1vi00c6kavnjlrwl3yy1xs60c34pkygm49dld2sgws7n0a";
+# };
+
+pkgs= builtins.fetchGit {
+  # Descriptive name to make the store path easier to identify
+  name = "nixos-unstable-2018-09-12";
+  url = "https://github.com/nixos/nixpkgs/";
+  ref = "refs/heads/master";
+  rev = "fe237597d151a33b6aab54f1f5a0af6353c74d04";
 };
 
 myHaskellPackageOverlay = self: super: {
-  myHaskellPackages = super.haskell.packages.ghc921.override {
+  myHaskellPackages = super.haskell.packages.ghc922.override {
     overrides = hself: hsuper: rec {
 
       hmatrix-sundials = super.haskell.lib.dontCheck (
@@ -33,6 +41,19 @@ myHaskellPackageOverlay = self: super: {
           ver = "3.0.1";
           sha256 = "sha256-ixHWZae6AxjRUldMgpYolXBGsOUT5ZVIw9HZkxrhHQ0=";
         } { }) [ ];
+
+      singletons-th = self.haskell.lib.addBuildDepends(
+        hself.callHackageDirect {
+          pkg = "singletons-th";
+          ver = "3.1";
+          sha256 = "sha256-34nyestxt8KNTSlmr1Y8nElNXa/wZ1+fuLEUVjZX8dk=";
+        } { }) [ ];
+
+      retry = self.haskell.lib.dontCheck hsuper.retry;
+
+      Chart = self.haskell.lib.doJailbreak hsuper.Chart;
+
+      size-based = self.haskell.lib.doJailbreak hsuper.size-based;
 
       random-fu = super.haskell.lib.dontCheck (
         hself.callCabal2nixWithOptions "random-fu" (builtins.fetchGit {
@@ -93,6 +114,11 @@ let
     Cabal
     (pkgs.haskell.lib.dontCheck inline-r)
     mtl
+    formatting
+    katip
+    Chart
+    Chart-diagrams
+    diagrams-svg
   ];
 
   # FIXME: One day I will be able to use julia with nix

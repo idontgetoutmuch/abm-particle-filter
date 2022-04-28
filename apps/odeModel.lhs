@@ -6,26 +6,74 @@ bibliography: references.bib
 Introduction
 ============
 
-Some references for ABMs and inference:
+Suppose you wish to model the outbreak of a disease. The [textbook
+model](https://en.wikipedia.org/wiki/Compartmental_models_in_epidemiology)
+is more or less the one that @1927RSPSA.115 published almost 100 years
+ago. This treats the number of infected individuals as continuous and
+you may prefer to model each individual and how they interact with
+each other. Instead you could use an [Agent Based
+Model](https://en.wikipedia.org/wiki/Agent-based_model) (ABM). Such
+models are very popular for modelling biological processes such as the
+growth of tumours: see e.g. [PhysiCell](http://physicell.org/). Here's
+an example of what such approaches and tools can achieve:
 
- * @Ross2017, @Lima2021, @Christ2021, @Rocha2021
+![](https://a.fsdn.com/con/app/proj/physicell/screenshots/pov00000337.png)
 
-Some references for SMC:
+The evolution of an epidemic and the growth of a tumour will depend on
+various parameters in the model e.g. how much contact does an
+individual have with other individuals or how often does a cancer cell
+divide given the available oxygen. In many models, the likelihood,
+that is the probability of an outcome given the parameters, is
+available computationally and often in a closed form. Agent Based
+Models (ABMs) pose a challenge for statistical inference as the
+likelihood for such models is rarely available. Here's a few
+references to some recent approaches either approximating the
+likelihood or using Approximate Bayesian Computation (ABC): @Ross2017,
+@Lima2021, @Christ2021, @Rocha2021.
 
- * @Dai, @Endo2019, @Dahlin, @Svensson
+But anyone who uses particle filtering will have realised that you
+don't need the likelihood of the state update, you only need to sample
+from it even though most expositions of particle filtering assume that
+this likelihood is available. What gives? It turns out that taking a
+different approach to mathematics behind particle filtering,
+Feynman-Kac models, only makes the assumption that you can sample from
+the state update and likelihood might not even exist (FIXME: check
+this). All the details can be found in @chopin2020introduction and
+further details in @moral2004feynman, @cappé2006inference. Further
+examples of the application of particle filtering or more correctly
+Sequential Monte Carlo (SMC) can be found in @Dai, @Endo2019, @Dahlin,
+@Svensson.
+
+I have put a summary of the mathematics in an appendix. The main body
+of this blog deals with the application of SMC (or particle filtering)
+to an example where the model could be an ABM. I've actually used a
+model based on differential equations purely because I haven't been
+able to find a good ABM library in Haskell.
 
 Example
 =======
 
 The Susceptible / Infected / Recovered (SIR) model has three
-parameters: one describing how infectious the pathogen is, one
-describing how much contact a host has with other hosts and one
-describing how quickly a host recovers.
+parameters: one describing how infectious the pathogen is ($\beta$), one
+describing how much contact a host has with other hosts ($c$) and one
+describing how quickly a host recovers ($\gamma$).
 
 $$
 \begin{aligned}
-\frac{d S}{d t} &=-\beta S \frac{I}{N} \\
-\frac{d I}{d t} &=\beta S \frac{I}{N}-\gamma I \\
+\frac{d S}{d t} &=-c \beta S \frac{I}{N} \\
+\frac{d I}{d t} &=c \beta S \frac{I}{N}-\gamma I \\
+\frac{d R}{d t} &=\gamma I
+\end{aligned}
+$$
+
+The infectivity rate and the contact rate are always used as $c\beta$
+and are thus non-identifiable so we can replace this product with a
+single parameter $\alpha = c\beta$).
+
+$$
+\begin{aligned}
+\frac{d S}{d t} &=-\alpha S \frac{I}{N} \\
+\frac{d I}{d t} &=\alpha S \frac{I}{N}-\gamma I \\
 \frac{d R}{d t} &=\gamma I
 \end{aligned}
 $$
@@ -55,11 +103,17 @@ A Deterministic Haskell Model
 > {-# LANGUAGE ScopedTypeVariables #-}
 > {-# LANGUAGE FlexibleContexts    #-}
 > {-# LANGUAGE OverloadedLists     #-}
+> {-# LANGUAGE OverloadedStrings   #-}
 > {-# LANGUAGE NumDecimals         #-}
 > {-# LANGUAGE ViewPatterns        #-}
 > {-# LANGUAGE BangPatterns        #-}
 > {-# LANGUAGE QuasiQuotes         #-}
 > {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+> {-# LANGUAGE MultiParamTypeClasses #-}
+> {-# LANGUAGE FlexibleInstances #-}
+> {-# LANGUAGE TypeFamilies #-}
+
+> {-# LANGUAGE TemplateHaskell   #-}
 
 > {-# OPTIONS_GHC -Wall              #-}
 > {-# OPTIONS_GHC -Wno-type-defaults #-}
@@ -71,16 +125,21 @@ A Deterministic Haskell Model
 > import           Numeric.Sundials
 > import           Numeric.LinearAlgebra
 > import           Prelude hiding (putStr, writeFile)
-> import           Katip.Monadic
+>
+> import           Katip
+> import           Katip.Monadic ()
+> import           System.IO
+>
 > import qualified Data.Vector.Storable as VS
 > import           Data.List (transpose)
 > import           System.Random
-> import           System.Random.Stateful (IOGenM, newIOGenM)
-
+> import           System.Random.Stateful (newIOGenM)
+>
 > import           Data.Random.Distribution.Normal
 > import qualified Data.Random as R
-
-> import           Control.Monad.IO.Class (MonadIO)
+> import           Data.Kind (Type)
+>
+> import           Control.Monad.Reader
 >
 > import           Data.PMMH
 > import           Data.OdeSettings
@@ -90,11 +149,6 @@ A Deterministic Haskell Model
 
 Basic Reproduction Number
 -------------------------
-
-Define the state and parameters for the model (FIXME: the infectivity
-rate and the contact rate are always used as $c\beta$ and are thus
-non-identifiable - I should probably just write the model with a
-single parameter $\alpha = c\beta$).
 
 If $\beta$ were constant, then $R_0 \triangleq \beta / \gamma$ would
 also be constant: the famous *basic reproduction number* for the SIR
@@ -135,9 +189,19 @@ $$
 >   , sirParamsGamma :: Double
 >   } deriving (Eq, Show)
 
+> data SirParams' = SirParams' {
+>     sirParamsR0    :: Double
+>   , sirParamsKappa :: Double
+>   } deriving (Eq, Show)
+
 > data Sir = Sir {
 >     sirS     :: SirState
 >   , sirP     :: SirParams
+>   } deriving (Eq, Show)
+
+> data Sir' = Sir' {
+>     sirS'     :: SirState
+>   , sirP'     :: SirParams'
 >   } deriving (Eq, Show)
 
 </details>
@@ -171,23 +235,68 @@ Define the actual ODE problem itself (FIXME: we can hide a lot more of the unnec
 >     initI = realToFrac (sirStateI $ sirS ps)
 >     initR = realToFrac (sirStateR $ sirS ps)
 
-> sol :: MonadIO m =>
->        (a -> b -> OdeProblem) -> b -> a -> m (Matrix Double)
-> sol s ps ts = do
->   x <- runNoLoggingT $ solve (defaultOpts $ ARKMethod SDIRK_5_3_4) (s ts ps)
+> sir' :: Vector Double -> Sir' -> OdeProblem
+> sir' ts ps = emptyOdeProblem
+>   { odeRhs = odeRhsPure f
+>   , odeJacobian = Nothing
+>   , odeInitCond = [initS, initI, initR]
+>   , odeEventHandler = nilEventHandler
+>   , odeMaxEvents = 0
+>   , odeSolTimes = ts
+>   , odeTolerances = defaultTolerances
+>   }
+>   where
+>     f _ (VS.toList -> [s, i, r]) =
+>       let n = s + i + r in
+>         [ -kappa * r0 * i / n * s
+>         , kappa * r0 * i / n * s - kappa * i
+>         , kappa * i
+>         ]
+>     f _ _ = error $ "Incorrect number of parameters"
+>
+>     r0 = realToFrac (sirParamsR0  $ sirP' ps)
+>     kappa = realToFrac (sirParamsKappa $ sirP' ps)
+>     initS = realToFrac (sirStateS $ sirS' ps)
+>     initI = realToFrac (sirStateI $ sirS' ps)
+>     initR = realToFrac (sirStateR $ sirS' ps)
+
+> solK :: (MonadIO m, Katip m) =>
+>         (a -> b -> OdeProblem) -> b -> a -> m (Matrix Double)
+> solK s ps ts = do
+>   x <- solve (defaultOpts $ ARKMethod SDIRK_5_3_4) (s ts ps)
+>   case x of
+>     Left e  -> error $ show e
+>     Right y -> return (solutionMatrix y)
+
+> solK' :: (MonadIO m, Katip m) =>
+>         (a -> b -> OdeProblem) -> b -> a -> m (Matrix Double)
+> solK' s ps ts = do
+>   x <- solve (defaultOpts $ ARKMethod SDIRK_5_3_4) (s ts ps)
 >   case x of
 >     Left e  -> error $ show e
 >     Right y -> return (solutionMatrix y)
 
 We can now run the model and compare its output to the actuals.
 
-> testSol :: IO ([Double])
-> testSol = do
->   m <- sol sir (Sir (SirState 762 1 0) (SirParams 0.2 10.0 0.5)) (vector us)
+> testSolK :: (MonadIO m, KatipContext m) => m [Double]
+> testSolK = do
+>   m <- solK sir (Sir (SirState 762 1 0) (SirParams 0.2 10.0 0.5)) (vector us)
 >   let n = tr m
 >   return $ toList (n!1)
 
-![](diagrams/modelActuals.png)
+> testSolK' :: (MonadIO m, KatipContext m) => m [Double]
+> testSolK' = do
+>   m <- solK' sir' (Sir' (SirState 762 1 0) (SirParams' 4.0 0.5)) (vector us)
+>   let n = tr m
+>   return $ toList (n!1)
+
+> testSolK'' :: (MonadIO m, KatipContext m) => m [Double]
+> testSolK'' = do
+>   m <- solK' sir' (Sir' (SirState 762 1 0) (SirParams' 3.2 0.55)) (vector us)
+>   let n = tr m
+>   return $ toList (n!1)
+
+![](diagrams/modelActuals.svg)
 
 FIXME: Sadly this does not work and I would rather write the draft
 first and then fight with BlogLiterately.
@@ -277,12 +386,13 @@ G(x,t;p) &\triangleq \begin{bmatrix}
 \end{aligned}
 $$
 
-> topF :: R.StatefulGen a IO => SirParams -> a -> SirState -> IO SirState
-> topF ps gen qs = do
->   m <- sol sir (Sir qs ps) [0.0, 1.0]
->   newS <- R.sampleFrom gen (normal (log (m!1!0)) 0.1)
->   newI <- R.sampleFrom gen (normal (log (m!1!1)) 0.1)
->   newR <- R.sampleFrom gen (normal (log (m!1!2)) 0.1)
+> topF :: (MonadIO m, R.StatefulGen g m, MonadReader g m, Katip m) =>
+>          SirParams' -> SirState -> m SirState
+> topF ps qs = do
+>   m <- solK' sir' (Sir' qs ps) [0.0, 1.0]
+>   newS <- R.sample (normal (log (m!1!0)) 0.1)
+>   newI <- R.sample (normal (log (m!1!1)) 0.1)
+>   newR <- R.sample (normal (log (m!1!2)) 0.1)
 >   return (SirState (exp newS) (exp newI) (exp newR))
 
 Apparently the person recording the outbreak only kept records of how
@@ -310,9 +420,10 @@ Now we can define a function that takes the current set of particles,
 their weights and the loglikelihood (FIXME: of what?) runs the
 particle filter for one time step and returns the new set of
 particles, new weights, the updated loglikelihood and a predicted
-value for the number of inspections.
+value for the number of infections.
 
-FIXME: Include code here
+```{.haskell include=src/Data/PMMH.hs startLine=42 endLine=74}
+```
 
 Further we can create some initial values and seed the random number
 generator (FIXME: I don't think this is really seeded).
@@ -326,9 +437,6 @@ generator (FIXME: I don't think this is really seeded).
 > initWeights :: Particles Double
 > initWeights = [ recip (fromIntegral nParticles) | _ <- [1 .. nParticles]]
 
-> newStdGenM :: IO (IOGenM StdGen)
-> newStdGenM = newIOGenM =<< newStdGen
-
 > us :: [Double]
 > us = map fromIntegral [1 .. length actuals]
 
@@ -339,24 +447,68 @@ We can finally run the model against the data and plot the results.
 
 FIXME: Include code here
 
-```{.haskell include=src/Data/PMMH.hs startLine=42 endLine=71}
-```
+> params :: SirParams'
+> params = SirParams' 3.0 0.4
+
+> preMainK :: forall m c1 z1 . (KatipContext m, Show c1, Show z1, Num z1, Ord z1, Num c1) => m [((SirParams', Double, c1), z1)]
+> preMainK = do
+>   q <- testSolK
+>   r <- testSolK'
+>   s <- testSolK''
+>   liftIO $ chart "Actuals" (zip us actuals) [q, r, s] "diagrams/modelActuals"
+>
+>   setStdGen (mkStdGen 42)
+>   g <- newStdGen
+>   stdGen <- newIOGenM g
+>   ps <- runReaderT (predicteds (g' (topF params) topG topD) initParticles initWeights (map Observed actuals)) stdGen
+>   let qs :: [[Double]]
+>       qs = transpose $ map (map sirStateI) $ snd ps
+>   liftIO $ chart "Generated" (zip us q) qs "diagrams/generateds"
+>   bar <- runReaderT (pmh topF topG topD (SirParamsD params 0.05 0.05) sirParamsUpd initParticles (map Observed actuals) (params, fst ps, 0.0) 10) stdGen
+>   return bar
+
+
+  ps <- runReaderT (predicteds (g' (topF (SirParams 0.2 10.0 0.5)) topG topD) initParticles initWeights (map Observed actuals)) stdGen
+  $(logTM) InfoS (logStr $ show $ fst ps)
+  let qs :: [[Double]]
+      qs = transpose $ map (map sirStateI) $ snd ps
+  liftIO $ chart (zip us q) qs "diagrams/generateds.svg"
+  bar <- runReaderT (pmh topF topG topD (SirParamsD (SirParams 0.2 10.0 0.5) 0.002 0.005 0.002) initParticles (map Observed actuals) (SirParams 0.2 10.0 0.5, fst ps, 0.0) 10) stdGen
+  return bar
 
 > main :: IO ()
 > main = do
->   q <- testSol
->   chart (zip us actuals) [q] "diagrams/modelActuals.png"
->   setStdGen (mkStdGen 42)
->   stdGen <- newStdGenM
->   ps <- predicteds (g' stdGen (topF (SirParams 0.2 10.0 0.5)) topG topD) initParticles initWeights (map Observed q)
->   let qs :: [[Double]]
->       qs = transpose $ map (map sirStateI) $ snd ps
->   chart (zip us q) [map observed $ fst ps] "diagrams/predicteds.png"
->   chart (zip us q) qs "diagrams/generateds.png"
+>   handleScribe <- mkHandleScribeWithFormatter myBracketFormat ColorIfTerminal stderr (permitItem DebugS) V2
+>   logEnv <- registerScribe "stderr" handleScribe defaultScribeSettings =<< initLogEnv "test" "devel"
+>   r <- runKatipContextT logEnv (mempty :: LogContexts) mempty preMainK
+>   print r
+>   return ()
 
-![](diagrams/predicteds.png)
+> data family SirParamsD k :: Type
 
-![](diagrams/generateds.png)
+> data instance SirParamsD SirParams' = SirParamsD SirParams' Double Double
+
+> instance R.Distribution SirParamsD SirParams' where
+>   rvar (SirParamsD mu sigmaR0 sigmaKappa) = do
+>     b <- R.rvar $ Normal (sirParamsR0 mu)    sigmaR0
+>     c <- R.rvar $ Normal (sirParamsKappa mu) sigmaKappa
+>     return $ SirParams' { sirParamsR0    = b
+>                         , sirParamsKappa = c
+>                         }
+>
+> instance R.PDF SirParamsD SirParams' where
+>   logPdf (SirParamsD mu sigmaR0 sigmaKappa) t = b + c
+>     where
+>       b = R.logPdf (Normal (sirParamsR0 mu)    sigmaR0)    (sirParamsR0 t)
+>       c = R.logPdf (Normal (sirParamsKappa mu) sigmaKappa) (sirParamsKappa t)
+
+> sirParamsUpd :: SirParams' -> SirParamsD SirParams' -> SirParamsD SirParams'
+> sirParamsUpd p (SirParamsD _ sigmaR0 sigmaKappa) = SirParamsD p sigmaR0 sigmaKappa
+
+
+![](diagrams/predicteds.svg)
+
+![](diagrams/generateds.svg)
 
 Estimating the Paramaters via MCMC
 ==================================
@@ -371,7 +523,7 @@ rarely available.
 ```{.stan include=sir_negbin.stan}
 ```
 
-![](diagrams/fakedata.png)
+![](diagrams/fakedata.svg)
 
 Markov Process and Chains
 =========================
@@ -402,7 +554,7 @@ $$
 It can be shown that
 
 $$
-\mathbb{P}_T(X_t \in \mathrm{d}x_t \,|\, X_{0:t-1} = x_{0:t-1}) = \mathbb{P}_T(X_t \in \mathrm{d}x_t, X_{t-1} = x_{t-1}) = K_t(x_{t-1}, \mathrm{d}x_t)
+\mathbb{P}_T(X_t \in \mathrm{d}x_t \,|\, X_{0:t-1} = x_{0:t-1}) = \mathbb{P}_T(X_t \in \mathrm{d}x_t \,|\, X_{t-1} = x_{t-1}) = K_t(x_{t-1}, \mathrm{d}x_t)
 $$
 
 and this is often used as the defintion of a (discrete-time) Markov Process.
@@ -412,13 +564,25 @@ We define a hidden Markov model as a $(\mathbb{X} \times \mathbb{Y}, X \otimes \
 Markov process $\left(X_{n}, Y_{n}\right)_{n \geq 0}$ whose joint distribution is given by
 
 $$
-\mathbb{P}_T(X_{0:T} \in {\mathrm d}x_{0:T}, Y_{0:T} \in {\mathrm d}y_{0:T}) = \mathbb{P}_0(\mathrm{d}x_0)F_s(x_{0}, \mathrm{d}y_0)\prod_{s = 1}^T K_s(x_{s - 1}, \mathrm{d}x_s) F_s(x_{s}, \mathrm{d}y_s)
+\mathbb{P}_T(X_{0:T} \in {\mathrm d}x_{0:T}, Y_{0:T} \in {\mathrm d}y_{0:T}) = \mathbb{P}_0(\mathrm{d}x_0)F_0(x_{0}, \mathrm{d}y_0)\prod_{s = 1}^T K_s(x_{s - 1}, \mathrm{d}x_s) F_s(x_{s}, \mathrm{d}y_s)
 $$
 
-Writing $\mathbb{Q}_0(\mathrm{d}x_0, \mathrm{d}y_0) = \mathbb{P}_0(\mathrm{d}x_0) F_0(x_0, \mathrm{d}y_0)$ and $L _t((x_{t-1}, y_{t-1}), (\mathrm{d}x_t, \mathrm{d}y_t)) = K_t(x_{t - 1}, \mathrm{d}x_t) F_t(x_{t}, \mathrm{d}y_t)$ we see that this is really is a Markov process:
+Writing
+$$
+\mathbb{Q}_0(\mathrm{d}x_0, \mathrm{d}y_0) = \mathbb{P}_0(\mathrm{d}x_0) F_0(x_0, \mathrm{d}y_0)
+$$
+and
+$$
+L _t((x_{t-1}, y_{t-1}), (\mathrm{d}x_t, \mathrm{d}y_t)) = K_t(x_{t - 1}, \mathrm{d}x_t) F_t(x_{t}, \mathrm{d}y_t)
+$$
+we see that this is really is a Markov process:
 
 $$
-\mathbb{P}_T(X_{0:T} \in {\mathrm d}x_{0:T}, Y_{0:T} \in {\mathrm d}y_{0:T}) = \mathbb{P}_0(\mathrm{d}x_0)F_0(x_0, \mathrm{d}y_0)\prod_{s = 1}^T K_s(x_{s - 1}, \mathrm{d}x_s) F_s(x_{s}, \mathrm{d}y_s) = \mathbb{Q}_0(\mathrm{d}x_0, \mathrm{d}y_0)\prod_{s = 1}^T L_s((x_{s - 1}, y_{s - 1}), (\mathrm{d}x_s, \mathrm{d}y_s))
+\begin{aligned}
+\mathbb{P}_T(X_{0:T} \in {\mathrm d}x_{0:T}, Y_{0:T} \in {\mathrm d}y_{0:T}) &=
+\mathbb{P}_0(\mathrm{d}x_0)F_0(x_0, \mathrm{d}y_0)\prod_{s = 1}^T K_s(x_{s - 1}, \mathrm{d}x_s) F_s(x_{s}, \mathrm{d}y_s) \\
+&= \mathbb{Q}_0(\mathrm{d}x_0, \mathrm{d}y_0)\prod_{s = 1}^T L_s((x_{s - 1}, y_{s - 1}), (\mathrm{d}x_s, \mathrm{d}y_s))
+\end{aligned}
 $$
 
 We make the usual assumption that
@@ -442,7 +606,7 @@ $$
 We can write
 
 $$
-\mathbb{P}_t(X_{0:t} \in \mathrm{d}x_{0:t} \,|\, Y_{0:t} = y_{0:t}) = \frac{1}{p_t(y_{0:t})}\Bigg[\prod_{s=0}^t f(x_s, y_s)\Bigg]\mathbb{P}_t(\mathrm{d}_{0:t})
+\mathbb{P}_t(X_{0:t} \in \mathrm{d}x_{0:t} \,|\, Y_{0:t} = y_{0:t}) = \frac{1}{p_t(y_{0:t})}\Bigg[\prod_{s=0}^t f(x_s, y_s)\Bigg]\mathbb{P}_t(\mathrm{d}x_{0:t})
 $$
 
 We can generalise this. Let us start by with a Markov process
@@ -506,12 +670,12 @@ Then using extension and marginalising we have
 
 $$
 \mathbb{P}_{t-1}\left(X_{t} \in \mathrm{d} x_{t} \mid Y_{0: t-1}=y_{0: t-1}\right)
-=\int_{x_{t-1} \in \mathcal{X}} K_{t}\left(x_{t-1}, \mathrm{~d} x_{t}\right) \mathbb{P}_{t}\left(X_{t-1} \in \mathrm{d} x_{t-1} \mid Y_{0: t-1}=y_{0: t-1}\right)
+=\int_{x_{t-1} \in \mathcal{X}} K_{t}\left(x_{t-1}, \mathrm{~d} x_{t}\right) \mathbb{P}_{t-1}\left(X_{t-1} \in \mathrm{d} x_{t-1} \mid Y_{0: t-1}=y_{0: t-1}\right)
 $$
 
 And using change of measure and marginalising we have
 $$
-\mathbb{P}_{t}\left(X_{t} \in \mathrm{d} x_{t} \mid Y_{0: t-1}=y_{0: t-1}\right)=\frac{1}{\ell_{t}} f_{t}\left(x_{t}, y_{t}\right) \mathbb{P}_{t-1}\left(X_{t} \in \mathrm{d} x_{t} \mid Y_{0: t-1}=y_{0: t-1}\right)
+\mathbb{P}_{t}\left(X_{t} \in \mathrm{d} x_{t} \mid Y_{0: t}=y_{0: t}\right)=\frac{1}{\ell_{t}} f_{t}\left(x_{t}, y_{t}\right) \mathbb{P}_{t-1}\left(X_{t} \in \mathrm{d} x_{t} \mid Y_{0: t-1}=y_{0: t-1}\right)
 $$
 
 If we define an operator $P$ on measures as:

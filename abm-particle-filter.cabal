@@ -32,7 +32,18 @@ library
         QuickCheck,
         random,
         random-fu,
-        vector
+        vector,
+        formatting,
+        text,
+        katip,
+        Chart,
+        Chart-diagrams,
+        diagrams-lib,
+        colour,
+        data-default-class,
+        lens,
+        diagrams-svg,
+        optparse-applicative
 
 executable ode-model
   main-is:             odeModel.lhs
