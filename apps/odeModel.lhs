@@ -37,12 +37,13 @@ from it even though most expositions of particle filtering assume that
 this likelihood is available. What gives? It turns out that taking a
 different approach to mathematics behind particle filtering,
 Feynman-Kac models, only makes the assumption that you can sample from
-the state update and likelihood might not even exist (FIXME: check
-this). All the details can be found in @chopin2020introduction and
-further details in @moral2004feynman, @cappé2006inference. Further
-examples of the application of particle filtering or more correctly
-Sequential Monte Carlo (SMC) can be found in @Dai, @Endo2019, @Dahlin,
-@Svensson.
+the state update and likelihood might not even exist. All the details
+can be found in @chopin2020introduction and further details in
+@moral2004feynman, @cappé2006inference. Further examples of the
+application of particle filtering or more correctly Sequential Monte
+Carlo (SMC) can be found in
+@https://doi.org/10.48550/arxiv.2007.11936, @Endo2019, @JSSv088c02,
+@it:2016-008.
 
 I have put a summary of the mathematics in an appendix. The main body
 of this blog deals with the application of SMC (or particle filtering)
@@ -97,8 +98,10 @@ of an influenza outbreak in a boarding school in the UK.
 A Deterministic Haskell Model
 -----------------------------
 
+For the over-enthusiatic reader only:
+
 <details class="code-details">
-<summary>Extensions and imports for this Literate Haskell file</summary>
+<summary>Extensions and imports</summary>
 
 > {-# LANGUAGE ScopedTypeVariables #-}
 > {-# LANGUAGE FlexibleContexts    #-}
@@ -147,35 +150,8 @@ A Deterministic Haskell Model
 
 </details>
 
-Basic Reproduction Number
--------------------------
-
-If $\beta$ were constant, then $R_0 \triangleq \beta / \gamma$ would
-also be constant: the famous *basic reproduction number* for the SIR
-model.
-
-When the transmission rate is time-varying, then $R_0(t)$ is a
-time-varying version of the basic reproduction number.
-
-Prior to solving the model directly, we make a few changes:
-
-- Re-parameterize using $\beta(t) = \gamma R_0(t)$
-- Define the proportion of individuals in each state as $ s \triangleq S/N $ etc.
-- Divide each equation by $ N $, and write the system of ODEs in terms of the proportions
-
-$$
-\begin{aligned}
-     \frac{d s}{d t}  & = - \gamma \, R_0 \, s \,  i
-     \\
-     \frac{d e}{d t}   & = \gamma \, R_0 \, s \,  i  - \gamma i
-     \\
-      \frac{d r}{d t}  & = \gamma  i
-\end{aligned}
-$$
-
-
 <details class="code-details">
-<summary>Extensions and imports for this Literate Haskell file</summary>
+<summary>Data Types</summary>
 
 > data SirState = SirState {
 >     sirStateS :: Double
@@ -206,8 +182,8 @@ $$
 
 </details>
 
-
-Define the actual ODE problem itself (FIXME: we can hide a lot more of the unnecessary details)
+As in most languages, it's easy enough to define the actual ODE
+problem itself:
 
 > sir :: Vector Double -> Sir -> OdeProblem
 > sir ts ps = emptyOdeProblem
@@ -235,6 +211,69 @@ Define the actual ODE problem itself (FIXME: we can hide a lot more of the unnec
 >     initI = realToFrac (sirStateI $ sirS ps)
 >     initR = realToFrac (sirStateR $ sirS ps)
 
+
+And then run a solver to return the results and then plot them. Here
+we are using a 4-th order implicit method from the
+[SUNDIALS ODE solver package](https://sundials.readthedocs.io/en/latest/arkode/Butcher_link.html#sdirk-5-3-4)
+but almost any solver would have worked for the set of equations we
+using as our example.
+
+> solK :: (MonadIO m, Katip m) =>
+>         (a -> b -> OdeProblem) -> b -> a -> m (Matrix Double)
+> solK s ps ts = do
+>   x <- solve (defaultOpts $ ARKMethod SDIRK_5_3_4) (s ts ps)
+>   case x of
+>     Left e  -> error $ show e
+>     Right y -> return (solutionMatrix y)
+
+> testSolK :: (MonadIO m, KatipContext m) => m [Double]
+> testSolK = do
+>   m <- solK sir (Sir (SirState 762 1 0) (SirParams 0.2 10.0 0.5)) (vector us)
+>   let n = tr m
+>   return $ toList (n!1)
+
+![](diagrams/modelActuals.svg)
+
+FIXME: Sadly this does not work and I would rather write the draft
+first and then fight with BlogLiterately.
+
+    [ghci]
+    import Data.List
+    :t transpose
+    import Numeric.LinearAlgebra
+    :t vector
+    import Data.PMMH
+    :t pf
+
+Generalising the Model
+======================
+
+Basic Reproduction Number
+-------------------------
+
+If $\beta$ were constant, then $R_0 \triangleq \beta / \gamma$ would
+also be constant: the famous *basic reproduction number* for the SIR
+model.
+
+When the transmission rate is time-varying, then $R_0(t)$ is a
+time-varying version of the basic reproduction number.
+
+Prior to solving the model directly, we make a few changes:
+
+- Re-parameterize using $\beta(t) = \gamma R_0(t)$
+- Define the proportion of individuals in each state as $ s \triangleq S/N $ etc.
+- Divide each equation by $ N $, and write the system of ODEs in terms of the proportions
+
+$$
+\begin{aligned}
+     \frac{d s}{d t}  & = - \gamma \, R_0 \, s \,  i
+     \\
+     \frac{d e}{d t}   & = \gamma \, R_0 \, s \,  i  - \gamma i
+     \\
+      \frac{d r}{d t}  & = \gamma  i
+\end{aligned}
+$$
+
 > sir' :: Vector Double -> Sir' -> OdeProblem
 > sir' ts ps = emptyOdeProblem
 >   { odeRhs = odeRhsPure f
@@ -260,14 +299,6 @@ Define the actual ODE problem itself (FIXME: we can hide a lot more of the unnec
 >     initI = realToFrac (sirStateI $ sirS' ps)
 >     initR = realToFrac (sirStateR $ sirS' ps)
 
-> solK :: (MonadIO m, Katip m) =>
->         (a -> b -> OdeProblem) -> b -> a -> m (Matrix Double)
-> solK s ps ts = do
->   x <- solve (defaultOpts $ ARKMethod SDIRK_5_3_4) (s ts ps)
->   case x of
->     Left e  -> error $ show e
->     Right y -> return (solutionMatrix y)
-
 > solK' :: (MonadIO m, Katip m) =>
 >         (a -> b -> OdeProblem) -> b -> a -> m (Matrix Double)
 > solK' s ps ts = do
@@ -275,14 +306,6 @@ Define the actual ODE problem itself (FIXME: we can hide a lot more of the unnec
 >   case x of
 >     Left e  -> error $ show e
 >     Right y -> return (solutionMatrix y)
-
-We can now run the model and compare its output to the actuals.
-
-> testSolK :: (MonadIO m, KatipContext m) => m [Double]
-> testSolK = do
->   m <- solK sir (Sir (SirState 762 1 0) (SirParams 0.2 10.0 0.5)) (vector us)
->   let n = tr m
->   return $ toList (n!1)
 
 > testSolK' :: (MonadIO m, KatipContext m) => m [Double]
 > testSolK' = do
@@ -296,21 +319,9 @@ We can now run the model and compare its output to the actuals.
 >   let n = tr m
 >   return $ toList (n!1)
 
-![](diagrams/modelActuals.svg)
 
-FIXME: Sadly this does not work and I would rather write the draft
-first and then fight with BlogLiterately.
-
-    [ghci]
-    import Data.List
-    :t transpose
-    import Numeric.LinearAlgebra
-    :t vector
-    import Data.PMMH
-    :t pf
-
-Generalising the Model
-======================
+Other
+-----
 
 We see that e.g. on day our model predicts 93 students in the sick bay
 while in fact there are 192 students there. What we would like to do
@@ -466,15 +477,6 @@ FIXME: Include code here
 >   liftIO $ chart "Generated" (zip us q) qs "diagrams/generateds"
 >   bar <- runReaderT (pmh topF topG topD (SirParamsD params 0.05 0.05) sirParamsUpd initParticles (map Observed actuals) (params, fst ps, 0.0) 10) stdGen
 >   return bar
-
-
-  ps <- runReaderT (predicteds (g' (topF (SirParams 0.2 10.0 0.5)) topG topD) initParticles initWeights (map Observed actuals)) stdGen
-  $(logTM) InfoS (logStr $ show $ fst ps)
-  let qs :: [[Double]]
-      qs = transpose $ map (map sirStateI) $ snd ps
-  liftIO $ chart (zip us q) qs "diagrams/generateds.svg"
-  bar <- runReaderT (pmh topF topG topD (SirParamsD (SirParams 0.2 10.0 0.5) 0.002 0.005 0.002) initParticles (map Observed actuals) (SirParams 0.2 10.0 0.5, fst ps, 0.0) 10) stdGen
-  return bar
 
 > main :: IO ()
 > main = do
