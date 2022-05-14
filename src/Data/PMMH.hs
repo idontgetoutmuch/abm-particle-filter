@@ -47,15 +47,18 @@ resampleStratified weights = do
 
 type Particles a = [a]
 
-pf :: forall m g a b d . (StatefulGen g m, MonadReader g m, R.Distribution R.Uniform d, Ord d, Num d, Floating d) =>
+pf :: forall m g a b d . (StatefulGen g m, MonadReader g m, R.Distribution R.Uniform d, Ord d, Num d, Floating d, Show a, KatipContext m, Show b, Show d) =>
       Particles a ->
       (a -> m a) ->
-      (a -> b) ->
+      (a -> m b) ->
       (b -> b -> d) ->
       Particles d ->
       b ->
       m (Particles b, Particles d, d, Particles a)
 pf statePrev f g d log_w y = do
+
+  $(logTM) InfoS (logStr (show statePrev))
+  $(logTM) InfoS (logStr (show y))
 
   let bigN = length log_w
       wn   = map exp $
@@ -63,14 +66,16 @@ pf statePrev f g d log_w y = do
       swn  = sum wn
       wn'  = map (/ swn) wn
 
+  $(logTM) InfoS (logStr (show wn'))
+
   b <- resampleStratified wn'
   let a              = map (\i -> i - 1) b
       stateResampled = map (\i -> statePrev!!(a!!i)) [0 .. bigN - 1]
 
   statePredicted <- mapM f stateResampled
+  obsPredicted <- mapM g statePredicted
 
-  let obsPredicted         = map g statePredicted
-      ds                   = map (d y) obsPredicted
+  let ds                   = map (d y) obsPredicted
       maxWeight            = maximum ds
       wm                   = map exp $
                              zipWith (-) ds (replicate bigN maxWeight)
@@ -81,9 +86,9 @@ pf statePrev f g d log_w y = do
 
   return (obsPredicted, ds, predictiveLikelihood, statePredicted)
 
-g' :: forall g m c b a . (StatefulGen g m, MonadReader g m, Floating c, Ord c, R.Distribution R.Uniform c, Fractional b) =>
+g' :: forall g m c b a . (StatefulGen g m, MonadReader g m, Floating c, Ord c, R.Distribution R.Uniform c, Fractional b, Show a, KatipContext m, Show b, Show c) =>
       (a -> m a)
-   -> (a -> b)
+   -> (a -> m b)
    -> (b -> b -> c)
    -> (Particles a, Particles c, c)
    -> b
@@ -101,9 +106,9 @@ predicteds s ips iws as = do
           ips : (map snd $ snd ps))
 
 pmhOneStep :: (MonadReader g m, StatefulGen g m, KatipContext m,
-               Fractional b, Num c, R.PDF d a1, Show a1, Show c) =>
+               Fractional b, Num c, R.PDF d a1, Show a1, Show c, Show a2, Show b) =>
               (a1 -> a2 -> m a2)
-           -> (a2 -> b)
+           -> (a2 -> m b)
            -> (b -> b -> Double)
            -> d a1
            -> (a1 -> d a1 -> d a1)
@@ -144,9 +149,9 @@ pmhOneStep f g d dist distUpd ips as (paramsPrev, logLikelihoodPrev, acceptPrev)
     else return (paramsPrev, logLikelihoodPrev, acceptPrev)
 
 pmh :: forall g m c z p b d a . (MonadReader g m, StatefulGen g m, KatipContext m,
-                                 Num c, Ord z, Fractional b, R.PDF d p, Num z, Show z, Show p, Show c) =>
+                                 Num c, Ord z, Fractional b, R.PDF d p, Num z, Show z, Show p, Show c, Show a, Show b) =>
        (p -> a -> m a)
-    -> (a -> b)
+    -> (a -> m b)
     -> (b -> b -> Double)
     -> d p
     -> (p -> d p -> d p)

@@ -54,6 +54,14 @@ able to find a good ABM library in Haskell.
 Example
 =======
 
+In 1978, anonymous authors sent a note to the British Medical Journal
+reporting an influenza outbreak in a boarding school in the north of
+England (@bmj-influenza). The chart below shows the solution of the
+SIR (Susceptible, Infected, Record) model with parameters which give
+roughly the results observed in the school.
+
+![](diagrams/modelRoughly.svg)
+
 The Susceptible / Infected / Recovered (SIR) model has three
 parameters: one describing how infectious the pathogen is ($\beta$), one
 describing how much contact a host has with other hosts ($c$) and one
@@ -175,7 +183,7 @@ For the over-enthusiatic reader only:
 >   , sirP     :: SirParams
 >   } deriving (Eq, Show)
 
-> data Sir' = Sir' {
+> data SirReparam = SirReparam {
 >     sirS'     :: SirState
 >   , sirP'     :: SirParams'
 >   } deriving (Eq, Show)
@@ -183,7 +191,18 @@ For the over-enthusiatic reader only:
 </details>
 
 As in most languages, it's easy enough to define the actual ODE
-problem itself:
+problem itself and then run a solver to return the results and then
+plot them. Here we are using a 4-th order implicit method from the
+[SUNDIALS ODE solver
+package](https://sundials.readthedocs.io/en/latest/arkode/Butcher_link.html#sdirk-5-3-4)
+but almost any solver would have worked for the set of equations we
+using as our example.
+
+I have hidden the details which can made be visible if the reader is
+interested.
+
+<details class="code-details">
+<summary>ODE Solver</summary>
 
 > sir :: Vector Double -> Sir -> OdeProblem
 > sir ts ps = emptyOdeProblem
@@ -211,13 +230,6 @@ problem itself:
 >     initI = realToFrac (sirStateI $ sirS ps)
 >     initR = realToFrac (sirStateR $ sirS ps)
 
-
-And then run a solver to return the results and then plot them. Here
-we are using a 4-th order implicit method from the
-[SUNDIALS ODE solver package](https://sundials.readthedocs.io/en/latest/arkode/Butcher_link.html#sdirk-5-3-4)
-but almost any solver would have worked for the set of equations we
-using as our example.
-
 > solK :: (MonadIO m, Katip m) =>
 >         (a -> b -> OdeProblem) -> b -> a -> m (Matrix Double)
 > solK s ps ts = do
@@ -232,24 +244,21 @@ using as our example.
 >   let n = tr m
 >   return $ toList (n!1)
 
+</details>
+
+Here's the results of running the solver with $R_0 = 4.0, \kappa =0.5$
+and with $R_0 = 3.2, \kappa = 0.55$, the former an educated guess and
+the latter as a result of running the inference method which is the
+main subject of this blog post.
+
 ![](diagrams/modelActuals.svg)
-
-FIXME: Sadly this does not work and I would rather write the draft
-first and then fight with BlogLiterately.
-
-    [ghci]
-    import Data.List
-    :t transpose
-    import Numeric.LinearAlgebra
-    :t vector
-    import Data.PMMH
-    :t pf
 
 Generalising the Model
 ======================
 
 Basic Reproduction Number
 -------------------------
+
 
 If $\beta$ were constant, then $R_0 \triangleq \beta / \gamma$ would
 also be constant: the famous *basic reproduction number* for the SIR
@@ -274,8 +283,11 @@ $$
 \end{aligned}
 $$
 
-> sir' :: Vector Double -> Sir' -> OdeProblem
-> sir' ts ps = emptyOdeProblem
+<details class="code-details">
+<summary>Re-parameterised ODE Solver</summary>
+
+> sirReparam :: Vector Double -> SirReparam -> OdeProblem
+> sirReparam ts ps = emptyOdeProblem
 >   { odeRhs = odeRhsPure f
 >   , odeJacobian = Nothing
 >   , odeInitCond = [initS, initI, initR]
@@ -309,16 +321,17 @@ $$
 
 > testSolK' :: (MonadIO m, KatipContext m) => m [Double]
 > testSolK' = do
->   m <- solK' sir' (Sir' (SirState 762 1 0) (SirParams' 4.0 0.5)) (vector us)
+>   m <- solK' sirReparam (SirReparam (SirState 762 1 0) (SirParams' 4.0 0.5)) (vector us)
 >   let n = tr m
 >   return $ toList (n!1)
 
 > testSolK'' :: (MonadIO m, KatipContext m) => m [Double]
 > testSolK'' = do
->   m <- solK' sir' (Sir' (SirState 762 1 0) (SirParams' 3.2 0.55)) (vector us)
+>   m <- solK' sirReparam (SirReparam (SirState 762 1 0) (SirParams' 3.2 0.55)) (vector us)
 >   let n = tr m
 >   return $ toList (n!1)
 
+</details>
 
 Other
 -----
@@ -400,7 +413,7 @@ $$
 > topF :: (MonadIO m, R.StatefulGen g m, MonadReader g m, Katip m) =>
 >          SirParams' -> SirState -> m SirState
 > topF ps qs = do
->   m <- solK' sir' (Sir' qs ps) [0.0, 1.0]
+>   m <- solK' sirReparam (SirReparam qs ps) [0.0, 1.0]
 >   newS <- R.sample (normal (log (m!1!0)) 0.1)
 >   newI <- R.sample (normal (log (m!1!1)) 0.1)
 >   newR <- R.sample (normal (log (m!1!2)) 0.1)
@@ -413,8 +426,9 @@ this case the observation function is particularly simple.
 
 > newtype Observed = Observed { observed :: Double } deriving (Eq, Show, Num, Fractional)
 
-> topG :: SirState -> Observed
-> topG = Observed . sirStateI
+> topG :: (MonadIO m, R.StatefulGen g m, MonadReader g m, Katip m) =>
+>         SirState -> m Observed
+> topG = return . Observed . sirStateI
 
 Particle Filtering in Practice
 =============================
@@ -461,12 +475,21 @@ FIXME: Include code here
 > params :: SirParams'
 > params = SirParams' 3.0 0.4
 
+> sigma2 :: Double
+> sigma2 = 1.0
+
+> foo :: (R.StatefulGen g m, MonadReader g m, KatipContext m) => m Double
+> foo = do
+>   bigX <- R.sample (normal 0.0 sigma2)
+>   return bigX
+
 > preMainK :: forall m c1 z1 . (KatipContext m, Show c1, Show z1, Num z1, Ord z1, Num c1) => m [((SirParams', Double, c1), z1)]
 > preMainK = do
 >   q <- testSolK
 >   r <- testSolK'
 >   s <- testSolK''
->   liftIO $ chart "Actuals" (zip us actuals) [q, r, s] "diagrams/modelActuals"
+>   liftIO $ chart' "Actuals / Original Model" "Actuals" (zip us actuals) ["Predicted"] [r] "diagrams/modelRoughly"
+>   liftIO $ chart' "Actuals / Original Model" "Actuals" (zip us actuals) ["R0 = 4.0 kappa = 0.5", "R0 = 3.2 kappa = 0.55"] [r, s] "diagrams/modelActuals"
 >
 >   setStdGen (mkStdGen 42)
 >   g <- newStdGen
@@ -476,7 +499,16 @@ FIXME: Include code here
 >       qs = transpose $ map (map sirStateI) $ snd ps
 >   liftIO $ chart "Generated" (zip us q) qs "diagrams/generateds"
 >   bar <- runReaderT (pmh topF topG topD (SirParamsD params 0.05 0.05) sirParamsUpd initParticles (map Observed actuals) (params, fst ps, 0.0) 10) stdGen
+>   baz <- runReaderT foo stdGen
 >   return bar
+
+> preMainK' :: (KatipContext m) => m Double
+> preMainK' = do
+>   setStdGen (mkStdGen 42)
+>   g <- newStdGen
+>   stdGen <- newIOGenM g
+>   baz <- runReaderT foo stdGen
+>   return baz
 
 > main :: IO ()
 > main = do
