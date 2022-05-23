@@ -65,15 +65,17 @@ h = do
   ps <- mapAccumM (myPf return return d) (prior, initWeights) obs
   return ((mu, obs), ps)
 
-myPf :: (R.StatefulGen g m, MonadReader g m,
-         R.Distribution R.Uniform d, Ord d, Floating d,
-         Show a, Show b, Show d, Num a, Real b, Real a, Fractional a) =>
+myPf :: (R.StatefulGen g m, MonadReader g m) =>
+         -- R.Distribution R.Uniform d, Ord d, Floating d,
+         -- Show a, Show b,
+         -- Show d,
+         -- Num a, Real b, Real a, Fractional a) =>
         (a -> m a)
      -> (a -> m b)
-     -> (b -> b -> d)
-     -> (Particles a, Particles d)
+     -> (b -> b -> Double)
+     -> (Particles a, Particles Double)
      -> b
-     -> m ((Particles a, Particles d), (Particles a, Particles d))
+     -> m ((Particles a, Particles Double), (Particles a, Particles Double))
 myPf ff gg dd (psPrev, wsPrev) ob = do
   (_, wsNew, _, psNew) <- pf psPrev ff gg dd wsPrev ob
   return ((psNew, wsNew), (psNew, wsNew))
@@ -98,14 +100,26 @@ main = do
   -- print $ sum psPosterior
   return ()
 
-pf :: forall m g a b d . (R.StatefulGen g m, MonadReader g m, R.Distribution R.Uniform d, Ord d, Num d, Floating d, Show a, Show b, Show d, Num a, Real b, Real a, Fractional a) =>
+pf :: forall m g a b . (R.StatefulGen g m,
+                          MonadReader g m) =>
+                          -- R.Distribution R.Uniform d,
+                          -- Ord d,
+                          -- Num d,
+                          -- Floating d,
+                          -- Show a,
+                          -- Show b,
+                          -- Show d,
+                          -- Num a,
+                          -- Real b,
+                          -- Real a,
+                          -- Fractional a) =>
       Particles a ->
       (a -> m a) ->
       (a -> m b) ->
-      (b -> b -> d) ->
-      Particles d ->
+      (b -> b -> Double) ->
+      Particles Double ->
       b ->
-      m (Particles b, Particles d, d, Particles a)
+      m (Particles b, Particles Double, Double, Particles a)
 pf statePrev ff g dd log_w y = do
 
   let bigN = length log_w
@@ -130,11 +144,11 @@ pf statePrev ff g dd log_w y = do
                              + log swm
                              - log (fromIntegral bigN)
 
-  trace ("Observation: " ++ show (format (fixed 2) y)) $ return ()
+  -- trace ("Observation: " ++ show (format (fixed 2) y)) $ return ()
   -- trace ("Previous weights: " ++ show wn') $ return ()
   -- trace ("Sample indices: " ++ show b) $ return ()
-  trace ("Previous state: " ++ show (format (fixed 2) ((/ fromIntegral nParticles) $ sum statePrev))) $ return ()
-  trace ("New state:      " ++ show (format (fixed 2) ((/ fromIntegral nParticles) $ sum statePredicted))) $ return ()
+  -- trace ("Previous state: " ++ show (format (fixed 2) ((/ fromIntegral nParticles) $ sum statePrev))) $ return ()
+  -- trace ("New state:      " ++ show (format (fixed 2) ((/ fromIntegral nParticles) $ sum statePredicted))) $ return ()
 
   return (obsPredicted, ds, predictiveLikelihood, statePredicted)
 
