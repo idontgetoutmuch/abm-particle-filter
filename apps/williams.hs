@@ -16,34 +16,34 @@ import           Data.Random.Distribution.Normal
 import qualified Data.Random as R
 import           Control.Monad.Reader
 import           Distribution.Utils.MapAccum
-import           Data.List(unfoldr)
+import           Data.List(unfoldr, mapAccumL)
 import           Data.Maybe (catMaybes)
-import           Formatting
+-- import           Formatting
 import           Data.Text.Lazy ()
 
 import Debug.Trace
 
-mu0 :: Double
-mu0 = 0.0
+mu0Test :: Double
+mu0Test = 0.0
 
-sigma02 :: Double
-sigma02 = 1.0
+sigma02Test :: Double
+sigma02Test = 1.0
 
 fakeObs :: (R.StatefulGen g m, MonadReader g m) =>
            Int -> Double -> Double -> Double -> m (Double, [Double])
-fakeObs n mu1 sigma12 cl2 = do
-  mu <- R.sample (normal mu1 sigma12)
-  xs <- replicateM n $ R.sample $ normal mu cl2
+fakeObs n mu0 sigma02 sigma = do
+  mu <- R.sample (normal mu0 sigma02)
+  xs <- replicateM n $ R.sample $ normal mu sigma
   return (mu, xs)
 
 nParticles :: Int
-nParticles = 1000
+nParticles = 100
 
-ck2 :: Double
-ck2 = 0.5
+sigmaTest :: Double
+sigmaTest = 0.5
 
 d :: Double -> Double -> Double
-d x y = R.logPdf (Normal x ck2) y
+d x y = R.logPdf (Normal x sigmaTest) y
 
 -- foo :: (R.StatefulGen g m, MonadReader g m, KatipContext m) =>
 --        Double -> Double -> m [Double]
@@ -57,10 +57,9 @@ nObs :: Int
 nObs = 1000
 
 h :: (R.StatefulGen g m, MonadReader g m) =>
-     m ((Double, [Double]), ((Particles Double, Particles Double), [(Particles Double, Particles Double)]))
-h = do
-  (mu, obs) <- fakeObs nObs mu0 sigma02 ck2
-  prior <- replicateM nParticles $ R.sample $ normal mu ck2
+     (Double, [Double]) -> m ((Double, [Double]), ((Particles Double, Particles Double), [(Particles Double, Particles Double)]))
+h (mu, obs) = do
+  prior <- replicateM nParticles $ R.sample $ normal mu sigmaTest
   let initWeights = replicate nParticles (recip $ fromIntegral nParticles)
   ps <- mapAccumM (myPf return return d) (prior, initWeights) obs
   return ((mu, obs), ps)
@@ -80,24 +79,46 @@ myPf ff gg dd (psPrev, wsPrev) ob = do
   (_, wsNew, _, psNew) <- pf psPrev ff gg dd wsPrev ob
   return ((psNew, wsNew), (psNew, wsNew))
 
-f :: MonadIO m => m ((Double, [Double]), ((Particles Double, Particles Double), [(Particles Double, Particles Double)]))
-f = do
+exact :: Double -> (Double, Double) -> Double -> (Double, Double)
+exact s2 (mu0, s02) x = (mu1, s12)
+  where
+    mu1 = x   * s02 / (s2 + s02) +
+          mu0 * s2  / (s2 + s02)
+    s12 = recip (recip s02 + recip s2)
+
+generateSamples :: MonadIO m => m (Double, [Double])
+generateSamples = do
   setStdGen (mkStdGen 42)
   g <- newStdGen
   stdGen <- newIOGenM g
-  bar <- runReaderT h stdGen
-  return bar
+  runReaderT (fakeObs nObs mu0Test sigma02Test sigmaTest) stdGen
+
+runFilter :: MonadIO m => Double -> [Double] ->
+             m ((Double, [Double]),
+                ((Particles Double, Particles Double),
+                  [(Particles Double, Particles Double)]))
+runFilter mu0 samples = do
+  setStdGen (mkStdGen 42)
+  g' <- newStdGen
+  stdGen' <- newIOGenM g'
+  runReaderT (h (mu0, samples)) stdGen'
 
 main :: IO ()
 main = do
-  (r, (_, _b)) <- f
+  (mu0, samples) <- generateSamples
+  let fee :: ((Double, Double), [(Double, Double)])
+      fee = mapAccumL (\s x -> (exact sigmaTest s x, exact sigmaTest s x)) (mu0Test, sigma02Test) samples
+  print "Exact"
+  print $ fst fee
+  (r, (_, b)) <- runFilter mu0 samples
+  print "Approximate"
   print $ fst r
   print $ (/ fromIntegral nObs) $ sum $ snd r
-  -- print $ (/ fromIntegral nObs) $ sum $ map (\x -> x * x) $ snd r
-  -- print $ (\x -> x * x) $ (/ fromIntegral nObs) $ sum $ snd r
-  -- print b
-  -- print $ sum psPrior
-  -- print $ sum psPosterior
+  let x1s = map (/ fromIntegral nParticles) $ map sum $ map fst b
+      x2s = map (/ fromIntegral nParticles) $ map sum $ map (map (\x -> x * x)) $ map fst b
+  -- print $ x1s
+  -- print $ x2s
+  -- print $ zipWith (\x y -> x - y * y) x2s x1s
   return ()
 
 pf :: forall m g a b . (R.StatefulGen g m,

@@ -51,8 +51,18 @@ to an example where the model could be an ABM. I've actually used a
 model based on differential equations purely because I haven't been
 able to find a good ABM library in Haskell.
 
-Example
-=======
+Examples
+========
+
+Suppose
+
+$$
+P\left(x_{1}, x_{2}, \cdots, x_{n} \mid \mu, \sigma^{2}\right) \propto \frac{1}{\sigma^{n}} \exp \left(-\frac{1}{2 \sigma^{2}} \sum\left(x_{i}-\mu\right)^{2}\right)
+$$
+
+$$
+\mu \mid x \sim \mathcal{N}\left(\frac{\sigma_{0}^{2}}{\sigma^{2}+\sigma_{0}^{2}} x+\frac{\sigma^{2}}{\sigma^{2}+\sigma_{0}^{2}} \mu_{0},\left(\frac{1}{\sigma_{0}^{2}}+\frac{1}{\sigma^{2}}\right)^{-1}\right)
+$$
 
 In 1978, anonymous authors sent a note to the British Medical Journal
 reporting an influenza outbreak in a boarding school in the north of
