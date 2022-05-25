@@ -54,15 +54,154 @@ able to find a good ABM library in Haskell.
 Examples
 ========
 
-Suppose
+*Estimating the Mean of a Normal Distirbution (with Known Variance)*
+
+Suppose we can draw samples from a normal distribution with unknown
+mean and known variance and wish to estimate the mean. In classical
+statistics we would estimate this by
 
 $$
-P\left(x_{1}, x_{2}, \cdots, x_{n} \mid \mu, \sigma^{2}\right) \propto \frac{1}{\sigma^{n}} \exp \left(-\frac{1}{2 \sigma^{2}} \sum\left(x_{i}-\mu\right)^{2}\right)
+\bar{x} = \frac{1}{n}\sum_{i=1}^n x_{i}
 $$
+
+where $n$ is the number of samples.
+
+In Bayesian statistics we have a prior distribution for the unknown
+mean which we also take to be normal
+
+$$
+P\left(\mu \mid \mu_{0}, \sigma_{0}^{2}\right) \propto \frac{1}{\sigma_{0}} \exp \left(-\frac{1}{2 \sigma_{0}^{2}}\left(\mu-\mu_{0}\right)^{2}\right)
+$$
+
+and then use a sample
+
+$$
+P\left(x \mid \mu, \sigma^{2}\right) \propto \frac{1}{\sigma^{n}} \exp \left(-\frac{1}{2 \sigma^{2}} \left(x-\mu\right)^{2}\right)
+$$
+
+to produce a posterior distribution for it
 
 $$
 \mu \mid x \sim \mathcal{N}\left(\frac{\sigma_{0}^{2}}{\sigma^{2}+\sigma_{0}^{2}} x+\frac{\sigma^{2}}{\sigma^{2}+\sigma_{0}^{2}} \mu_{0},\left(\frac{1}{\sigma_{0}^{2}}+\frac{1}{\sigma^{2}}\right)^{-1}\right)
 $$
+
+If we continue to take samples then the posterior distribution becomes
+
+$$
+\mu \mid x_{1}, x_{2}, \cdots, x_{n} \sim \mathcal{N}\left(\frac{\sigma_{0}^{2}}{\frac{\sigma^{2}}{n}+\sigma_{0}^{2}} \bar{x}+\frac{\sigma^{2}}{\frac{\sigma^{2}}{n}+\sigma_{0}^{2}} \mu_{0},\left(\frac{1}{\sigma_{0}^{2}}+\frac{n}{\sigma^{2}}\right)^{-1}\right)
+$$
+
+Note that if we take $\sigma_0$ to be very large (we have little prior
+information about the value of $\mu$) then
+
+$$
+\mu \mid x_{1}, x_{2}, \cdots, x_{n} \sim \mathcal{N}\left(\bar{x},\left(\frac{1}{\sigma_{0}^{2}}+\frac{n}{\sigma^{2}}\right)^{-1}\right)
+$$
+
+and if we take $n$ to be very large then
+
+$$
+\mu \mid x_{1}, x_{2}, \cdots, x_{n} \sim \mathcal{N}\left(\bar{x},\frac{\sigma}{\sqrt{n}}\right)
+$$
+
+which ties up with the classical estimate.
+
+FIXME: I seem to have used two different notations
+
+<details class="code-details">
+<summary>Extensions and imports (for the over-enthusiatic reader only)</summary>
+
+> {-# LANGUAGE ScopedTypeVariables #-}
+> {-# LANGUAGE FlexibleContexts    #-}
+> {-# LANGUAGE OverloadedLists     #-}
+> {-# LANGUAGE OverloadedStrings   #-}
+> {-# LANGUAGE NumDecimals         #-}
+> {-# LANGUAGE ViewPatterns        #-}
+> {-# LANGUAGE BangPatterns        #-}
+> {-# LANGUAGE QuasiQuotes         #-}
+> {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+> {-# LANGUAGE MultiParamTypeClasses #-}
+> {-# LANGUAGE FlexibleInstances #-}
+> {-# LANGUAGE TypeFamilies #-}
+
+> {-# LANGUAGE TemplateHaskell   #-}
+
+> {-# OPTIONS_GHC -Wall              #-}
+> {-# OPTIONS_GHC -Wno-type-defaults #-}
+
+> module Main (
+> main
+> ) where
+
+> import           Numeric.Sundials
+> import           Numeric.LinearAlgebra
+> import           Prelude hiding (putStr, writeFile)
+>
+> import           Katip
+> import           Katip.Monadic ()
+> import           System.IO
+>
+> import qualified Data.Vector.Storable as VS
+> import           Data.List (transpose, unfoldr, mapAccumL)
+> import           System.Random
+> import           System.Random.Stateful (newIOGenM)
+>
+> import           Data.Random.Distribution.Normal
+> import qualified Data.Random as R
+> import           Data.Kind (Type)
+>
+> import           Control.Monad.Reader
+>
+> import           Data.PMMH
+> import           Data.OdeSettings
+> import           Data.Chart
+
+> mu0Test :: Double
+> mu0Test = 0.0
+
+> sigma02Test :: Double
+> sigma02Test = 1.0
+
+> sigmaTest :: Double
+> sigmaTest = 0.5
+
+> nObs :: Int
+> nObs = 1000
+
+</details>
+
+Let's generate a mean for the distribution and then some samples from it
+
+> fakeObs :: (R.StatefulGen g m, MonadReader g m) =>
+>            Int -> Double -> Double -> Double -> m (Double, [Double])
+> fakeObs n mu0 sigma02 sigma = do
+>   mu <- R.sample (normal mu0 sigma02)
+>   xs <- replicateM n $ R.sample $ normal mu sigma
+>   return (mu, xs)
+
+> generateSamples :: MonadIO m => Int -> m (Double, [Double])
+> generateSamples nObs = do
+>   setStdGen (mkStdGen 42)
+>   g <- newStdGen
+>   stdGen <- newIOGenM g
+>   runReaderT (fakeObs nObs mu0Test sigma02Test sigmaTest) stdGen
+
+We'd like to use the samples to recover the mean. Here's the update
+for one observation
+
+> exact :: Double -> (Double, Double) -> Double -> (Double, Double)
+> exact s2 (mu0, s02) x = (mu1, s12)
+>   where
+>     mu1 = x   * s02 / (s2 + s02) +
+>           mu0 * s2  / (s2 + s02)
+>     s12 = recip (recip s02 + recip s2)
+
+And we can test after many samples (since the data is very noisy) that we get back a reasonable estimate
+
+> test :: MonadIO m => m (Double, Double)
+> test = fst <$> mapAccumL (\s x -> (exact sigmaTest s x, exact sigmaTest s x)) (mu0Test, sigma02Test) <$> snd <$> generateSamples 1000000
+
+*Susceptible, Infected, Recovered: Influenza in a Boarding School*
 
 In 1978, anonymous authors sent a note to the British Medical Journal
 reporting an influenza outbreak in a boarding school in the north of
@@ -115,58 +254,6 @@ of an influenza outbreak in a boarding school in the UK.
 
 A Deterministic Haskell Model
 -----------------------------
-
-For the over-enthusiatic reader only:
-
-<details class="code-details">
-<summary>Extensions and imports</summary>
-
-> {-# LANGUAGE ScopedTypeVariables #-}
-> {-# LANGUAGE FlexibleContexts    #-}
-> {-# LANGUAGE OverloadedLists     #-}
-> {-# LANGUAGE OverloadedStrings   #-}
-> {-# LANGUAGE NumDecimals         #-}
-> {-# LANGUAGE ViewPatterns        #-}
-> {-# LANGUAGE BangPatterns        #-}
-> {-# LANGUAGE QuasiQuotes         #-}
-> {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-> {-# LANGUAGE MultiParamTypeClasses #-}
-> {-# LANGUAGE FlexibleInstances #-}
-> {-# LANGUAGE TypeFamilies #-}
-
-> {-# LANGUAGE TemplateHaskell   #-}
-
-> {-# OPTIONS_GHC -Wall              #-}
-> {-# OPTIONS_GHC -Wno-type-defaults #-}
-
-> module Main (
-> main
-> ) where
-
-> import           Numeric.Sundials
-> import           Numeric.LinearAlgebra
-> import           Prelude hiding (putStr, writeFile)
->
-> import           Katip
-> import           Katip.Monadic ()
-> import           System.IO
->
-> import qualified Data.Vector.Storable as VS
-> import           Data.List (transpose)
-> import           System.Random
-> import           System.Random.Stateful (newIOGenM)
->
-> import           Data.Random.Distribution.Normal
-> import qualified Data.Random as R
-> import           Data.Kind (Type)
->
-> import           Control.Monad.Reader
->
-> import           Data.PMMH
-> import           Data.OdeSettings
-> import           Data.Chart
-
-</details>
 
 <details class="code-details">
 <summary>Data Types</summary>
@@ -270,7 +357,7 @@ Basic Reproduction Number
 -------------------------
 
 
-If $\beta$ were constant, then $R_0 \triangleq \beta / \gamma$ would
+If $\beta$ were constant, then $R_0 := \beta / \gamma$ would
 also be constant: the famous *basic reproduction number* for the SIR
 model.
 
@@ -280,7 +367,7 @@ time-varying version of the basic reproduction number.
 Prior to solving the model directly, we make a few changes:
 
 - Re-parameterize using $\beta(t) = \gamma R_0(t)$
-- Define the proportion of individuals in each state as $ s \triangleq S/N $ etc.
+- Define the proportion of individuals in each state as $ s := S/N $ etc.
 - Divide each equation by $ N $, and write the system of ODEs in terms of the proportions
 
 $$
@@ -380,7 +467,7 @@ $$
 System of SDEs
 --------------
 
-The system can be written in vector form $ x \triangleq [s, i, r, R₀] $ with parameter tuple parameter tuple $ p \triangleq (\gamma, \eta, \sigma, \bar{R}_0) $
+The system can be written in vector form $x := [s, i, r, R_\theta]$ with parameter tuple parameter tuple $p := (\gamma, \eta, \sigma, \bar{R}_0)$
 
 The general form of the SDE is.
 
@@ -393,7 +480,7 @@ $$
 With the drift,
 
 $$
-F(x,t;p) \triangleq \begin{bmatrix}
+F(x,t;p) := \begin{bmatrix}
     -\gamma \, R_0 \, s \,  i
     \\
     \gamma \, R_0 \,  s \,  i  - \gamma i
@@ -411,7 +498,7 @@ As the source of Brownian motion only affects the $ d R_0 $ term (i.e. the 4th e
 
 $$
 \begin{aligned}
-G(x,t;p) &\triangleq \begin{bmatrix}
+G(x,t;p) &:= \begin{bmatrix}
 0 & 0 & 0 & 0 \\
 0 & 0 & 0 & 0 \\
 0 & 0 & 0 & 0 \\
@@ -662,7 +749,7 @@ $$
 and then assume that we are given a sequence of potential functions (the nomenclature appears to come from statistical physics) $G_0 : \mathcal{X} \rightarrow \mathbb{R}^+$ and $G_t : \mathcal{X} \times \mathcal{X} \rightarrow \mathbb{R}^+$ for $1 \leq t \leq T$. Then a sequence of Feynman-Kac models is given by a change of measure (FIXME: not even mentioned so far) from $\mathbb{M}_t$:
 
 $$
-\mathbb{Q}_t(\mathrm{d} x_{0:t}) \triangleq \frac{1}{L_t}G_0(x_0)\Bigg[\prod_{s=1}^t G_s(x_{s-1}, x_s)\Bigg]\mathbb{M}_t(\mathrm{d} x_{0:t})
+\mathbb{Q}_t(\mathrm{d} x_{0:t}) := \frac{1}{L_t}G_0(x_0)\Bigg[\prod_{s=1}^t G_s(x_{s-1}, x_s)\Bigg]\mathbb{M}_t(\mathrm{d} x_{0:t})
 $$
 
 (N.B. we don't yet know this is a Markov measure - have we even defined a Markov measure?)
@@ -725,17 +812,17 @@ $$
 If we define an operator $P$ on measures as:
 
 $$
-\mathrm{P} \rho \triangleq \int \rho(\mathrm{d}x)K\left(x, \mathrm{d}x^{\prime}\right)
+\mathrm{P} \rho := \int \rho(\mathrm{d}x)K\left(x, \mathrm{d}x^{\prime}\right)
 $$
 
 and an operator $C_t$ as:
 
 $$
-\mathrm{C}_{t} \rho \triangleq \frac{\rho(d x) f\left(x, y_{t}\right)}{\int \rho(d x) f\left(x, y_{t}\right)}
+\mathrm{C}_{t} \rho := \frac{\rho(d x) f\left(x, y_{t}\right)}{\int \rho(d x) f\left(x, y_{t}\right)}
 $$
 
 $$
-\pi_{n} \triangleq \mathbf{P}\left(X_{n} \in \cdot \mid Y_{1}, \ldots, Y_{n}\right)
+\pi_{n} := \mathbf{P}\left(X_{n} \in \cdot \mid Y_{1}, \ldots, Y_{n}\right)
 $$
 
 $$
