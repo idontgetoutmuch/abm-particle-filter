@@ -136,23 +136,24 @@ FIXME: I seem to have used two different notations
 > import           Numeric.Sundials
 > import           Numeric.LinearAlgebra
 > import           Prelude hiding (putStr, writeFile)
->
+
 > import           Katip
 > import           Katip.Monadic ()
 > import           System.IO
->
+
 > import qualified Data.Vector.Storable as VS
 > import           Data.List (transpose, unfoldr, mapAccumL)
+> import           Distribution.Utils.MapAccum
 > import           System.Random
 > import           System.Random.Stateful (newIOGenM)
->
+
 > import           Data.Random.Distribution.Normal
 > import qualified Data.Random as R
 > import           Data.Kind (Type)
->
+
 > import           Control.Monad.Reader
->
-> import           Data.PMMH
+
+> import           Data.PMMH hiding (pf)
 > import           Data.OdeSettings
 > import           Data.Chart
 
@@ -179,8 +180,8 @@ Let's generate a mean for the distribution and then some samples from it
 >   xs <- replicateM n $ R.sample $ normal mu sigma
 >   return (mu, xs)
 
-> generateSamples :: MonadIO m => Int -> m (Double, [Double])
-> generateSamples nObs = do
+> generateSamples :: MonadIO m => Double -> Double -> Int -> m (Double, [Double])
+> generateSamples mu0 sigma02 nObs = do
 >   setStdGen (mkStdGen 42)
 >   g <- newStdGen
 >   stdGen <- newIOGenM g
@@ -199,7 +200,126 @@ for one observation
 And we can test after many samples (since the data is very noisy) that we get back a reasonable estimate
 
 > test :: MonadIO m => m (Double, Double)
-> test = fst <$> mapAccumL (\s x -> (exact sigmaTest s x, exact sigmaTest s x)) (mu0Test, sigma02Test) <$> snd <$> generateSamples 1000000
+> test = let f = exact sigmaTest in
+>        fst <$>
+>        mapAccumL (\s x -> (f s x, f s x)) (mu0Test, sigma02Test) <$>
+>        snd <$> generateSamples mu0Test sigma02Test 1000000
+
+We can re-write this problem in a way suitable for particle filtering:
+
+
+$$
+\begin{aligned}
+x_0 &\sim {\mathcal{N}}(\mu_0, \sigma_0^2) \\
+x_{i} &= x_{i-1} \\
+y_i   &= x_i + \epsilon_i
+\end{aligned}
+$$
+
+> pf :: forall m g a b . (R.StatefulGen g m,
+>                           MonadReader g m) =>
+>       Particles a ->
+>       (a -> m a) ->
+>       (a -> m b) ->
+>       (b -> b -> Double) ->
+>       Particles Double ->
+>       b ->
+>       m (Particles b, Particles Double, Double, Particles a)
+> pf statePrev ff g dd log_w y = do
+
+>   let bigN = length log_w
+>       wn   = map exp $
+>              zipWith (-) log_w (replicate bigN (maximum log_w))
+>       swn  = sum wn
+>       wn'  = map (/ swn) wn
+
+>   b <- resampleStratified wn'
+>   let a              = map (\i -> i - 1) b
+>       stateResampled = map (\i -> statePrev!!(a!!i)) [0 .. bigN - 1]
+
+>   statePredicted <- mapM ff stateResampled
+>   obsPredicted <- mapM g statePredicted
+
+>   let ds                   = map (dd y) obsPredicted
+>       maxWeight            = maximum ds
+>       wm                   = map exp $
+>                              zipWith (-) ds (replicate bigN maxWeight)
+>       swm                  = sum wm
+>       predictiveLikelihood =   maxWeight
+>                              + log swm
+>                              - log (fromIntegral bigN)
+
+>   return (obsPredicted, ds, predictiveLikelihood, statePredicted)
+
+> d :: Double -> Double -> Double
+> d x y = R.logPdf (Normal x sigmaTest) y
+
+> generatePrior :: MonadIO m => Double -> Double -> Int -> m [Double]
+> generatePrior mu sigmaTest nParticles = do
+>   setStdGen (mkStdGen 42)
+>   g <- newStdGen
+>   stdGen <- newIOGenM g
+>   runReaderT (replicateM nParticles $ R.sample $ normal mu sigmaTest) stdGen
+
+> h :: (R.StatefulGen g m, MonadReader g m) =>
+>      [Double] ->
+>      Int ->
+>      (Double, [Double]) ->
+>      m [(Particles Double, Particles Double)]
+> h prior nParticles (mu, obs) = do
+>   let initWeights = replicate nParticles (recip $ fromIntegral nParticles)
+>   ps <- mapAccumM (myPf return return d) (prior, initWeights) obs
+>   return $ snd ps
+
+> myPf :: (R.StatefulGen g m, MonadReader g m) =>
+>         (a -> m a)
+>      -> (a -> m b)
+>      -> (b -> b -> Double)
+>      -> (Particles a, Particles Double)
+>      -> b
+>      -> m ((Particles a, Particles Double), (Particles a, Particles Double))
+> myPf ff gg dd (psPrev, wsPrev) ob = do
+>   (_, wsNew, _, psNew) <- pf psPrev ff gg dd wsPrev ob
+>   return ((psNew, wsNew), (psNew, wsNew))
+
+> runFilter :: MonadIO m => [Double] -> Int -> Double -> [Double] ->
+>              m [(Particles Double, Particles Double)]
+> runFilter prior nParticles mu0 samples = do
+>   setStdGen (mkStdGen 42)
+>   g' <- newStdGen
+>   stdGen' <- newIOGenM g'
+>   runReaderT (h prior nParticles (mu0, samples)) stdGen'
+
+> test1 :: IO ()
+> test1 = do
+>   print "Prior paramaters"
+>   print mu0Test
+>   print sigma02Test
+>   let obsN = 1
+>   (mu, samples) <- generateSamples mu0Test sigma02Test obsN
+>   print "Mean to be estimated (sampled from hyperparameters)"
+>   print mu
+>   let f = exact sigmaTest
+>   let foo :: ((Double, Double), [(Double, Double)])
+>       foo = mapAccumL (\s x -> (f s x, f s x)) (mu0Test, sigma02Test) samples
+>   print foo
+>   let n = 100
+>   prior <- generatePrior mu0Test sigma02Test n
+>   let priorSampledMean = sum prior / fromIntegral n
+>   print "Prior Sampled Mean"
+>   print priorSampledMean
+>   b <- runFilter prior n mu samples
+>   print "Approximate"
+>   let x1s = map (/ fromIntegral n) $
+>             map sum $
+>             map fst b
+>       x2s = map (/ fromIntegral n) $
+>             map sum $
+>             map (map (\x -> x * x)) $
+>             map fst b
+>   print x1s
+>   return ()
+
 
 *Susceptible, Infected, Recovered: Influenza in a Boarding School*
 
@@ -319,7 +439,7 @@ interested.
 >         , gamma * i
 >         ]
 >     f _ _ = error $ "Incorrect number of parameters"
->
+
 >     beta  = realToFrac (sirParamsBeta  $ sirP ps)
 >     c     = realToFrac (sirParamsC     $ sirP ps)
 >     gamma = realToFrac (sirParamsGamma $ sirP ps)
@@ -401,7 +521,7 @@ $$
 >         , kappa * i
 >         ]
 >     f _ _ = error $ "Incorrect number of parameters"
->
+
 >     r0 = realToFrac (sirParamsR0  $ sirP' ps)
 >     kappa = realToFrac (sirParamsKappa $ sirP' ps)
 >     initS = realToFrac (sirStateS $ sirS' ps)
@@ -587,7 +707,7 @@ FIXME: Include code here
 >   s <- testSolK''
 >   liftIO $ chart' "Actuals / Original Model" "Actuals" (zip us actuals) ["Predicted"] [r] "diagrams/modelRoughly"
 >   liftIO $ chart' "Actuals / Original Model" "Actuals" (zip us actuals) ["R0 = 4.0 kappa = 0.5", "R0 = 3.2 kappa = 0.55"] [r, s] "diagrams/modelActuals"
->
+
 >   setStdGen (mkStdGen 42)
 >   g <- newStdGen
 >   stdGen <- newIOGenM g
@@ -626,7 +746,7 @@ FIXME: Include code here
 >     return $ SirParams' { sirParamsR0    = b
 >                         , sirParamsKappa = c
 >                         }
->
+
 > instance R.PDF SirParamsD SirParams' where
 >   logPdf (SirParamsD mu sigmaR0 sigmaKappa) t = b + c
 >     where
