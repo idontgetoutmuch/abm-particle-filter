@@ -131,6 +131,7 @@ FIXME: I seem to have used two different notations
 
 > module Main (
 >   main
+> , test
 > , test1
 > ) where
 
@@ -143,7 +144,7 @@ FIXME: I seem to have used two different notations
 > import           System.IO
 
 > import qualified Data.Vector.Storable as VS
-> import           Data.List (transpose, unfoldr, mapAccumL)
+> import           Data.List (transpose, mapAccumL)
 > import           Distribution.Utils.MapAccum
 > import           System.Random
 > import           System.Random.Stateful (newIOGenM, IOGenM)
@@ -157,8 +158,6 @@ FIXME: I seem to have used two different notations
 > import           Data.PMMH hiding (pf)
 > import           Data.OdeSettings
 > import           Data.Chart
-
-> import Debug.Trace
 
 </details>
 
@@ -223,11 +222,11 @@ $$
 >              zipWith (-) log_w (replicate bigN (maximum log_w))
 >       swn  = sum wn
 >       wn'  = map (/ swn) wn
->   -- trace (show wn') $ return ()
+>
 >   b <- resampleStratified wn'
 >   let a              = map (\i -> i - 1) b
 >       stateResampled = map (\i -> statePrev!!(a!!i)) [0 .. bigN - 1]
->   -- trace (show b) $ return ()
+>
 >   statePredicted <- mapM ff stateResampled
 >   obsPredicted <- mapM g statePredicted
 
@@ -239,18 +238,15 @@ $$
 >       predictiveLikelihood =   maxWeight
 >                              + log swm
 >                              - log (fromIntegral bigN)
->   -- trace (show $ map (/ swm) wm) $ return ()
+>
 >   return (obsPredicted, ds, predictiveLikelihood, statePredicted)
 
-> d :: Double -> Double -> Double
-> d x y = R.logPdf (Normal x sigmaTest) y
-
 > generatePrior :: MonadIO m => Double -> Double -> Int -> m [Double]
-> generatePrior mu s nParticles = do
+> generatePrior mu s nps = do
 >   setStdGen (mkStdGen 42)
 >   g <- newStdGen
 >   stdGen <- newIOGenM g
->   runReaderT (replicateM nParticles $ R.sample $ normal mu s) stdGen
+>   runReaderT (replicateM nps $ R.sample $ normal mu s) stdGen
 
 > h :: (R.StatefulGen g m, MonadReader g m) =>
 >      [a] ->
@@ -260,9 +256,9 @@ $$
 >      (b -> b -> Double) ->
 >      [b] ->
 >      m [(Particles a, Particles Double)]
-> h prior nParticles ff gg dd obs = do
->   let initWeights = replicate nParticles (recip $ fromIntegral nParticles)
->   ps <- mapAccumM (myPf ff gg dd) (prior, initWeights) obs
+> h prior nps ff gg dd obs = do
+>   let iws = replicate nps (recip $ fromIntegral nps)
+>   ps <- mapAccumM (myPf ff gg dd) (prior, iws) obs
 >   return $ snd ps
 
 > myPf :: (R.StatefulGen g m, MonadReader g m) =>
@@ -283,11 +279,11 @@ $$
 >                           (b -> b -> Double) ->
 >                           [b] ->
 >                           m [(Particles a, Particles Double)]
-> runFilter prior nParticles ff gg dd samples = do
+> runFilter prior nps ff gg dd samples = do
 >   setStdGen (mkStdGen 42)
->   g' <- newStdGen
->   stdGen' <- newIOGenM g'
->   runReaderT (h prior nParticles ff gg dd samples) stdGen'
+>   g'' <- newStdGen
+>   stdGen' <- newIOGenM g''
+>   runReaderT (h prior nps ff gg dd samples) stdGen'
 
 > mu0Test :: Double
 > mu0Test = 0.0
@@ -297,10 +293,6 @@ $$
 
 > sigmaTest :: Double
 > sigmaTest = 0.1
-
-> nObs :: Int
-> nObs = 1000
-
 
 > test1 :: IO ()
 > test1 = do
@@ -328,16 +320,16 @@ $$
 >                          return return
 >                          (\x y -> R.logPdf (Normal x (sqrt sigmaTest)) y)
 >                          (take 2 samples)
->   let p1m1 = map (/ fromIntegral n) $
->              map sum $
->              map fst p1Samples
->       p1m2 = map (/ fromIntegral n) $
->              map sum $
->              map (map (\x -> x * x)) $
->              map fst p1Samples
->       p1v  = zipWith(\p1m1 p1m2 -> p1m2 - p1m1 * p1m1) p1m1 p1m2
+>   let p1m1s = map (/ fromIntegral n) $
+>               map sum $
+>               map fst p1Samples
+>       p1m2s = map (/ fromIntegral n) $
+>               map sum $
+>               map (map (\x -> x * x)) $
+>               map fst p1Samples
+>       p1v  = zipWith(\p1m1 p1m2 -> p1m2 - p1m1 * p1m1) p1m1s p1m2s
 >   print "Posterior parameters approximate"
->   print p1m1
+>   print p1m1s
 >   print p1v
 
    let f = exact sigmaTest
@@ -728,14 +720,6 @@ FIXME: Include code here
 > params :: SirParams'
 > params = SirParams' 3.0 0.4
 
-> sigma2 :: Double
-> sigma2 = 1.0
-
-> foo :: (R.StatefulGen g m, MonadReader g m, KatipContext m) => m Double
-> foo = do
->   bigX <- R.sample (normal 0.0 sigma2)
->   return bigX
-
 > preMainK :: forall m c1 z1 . (KatipContext m, Show c1, Show z1, Num z1, Ord z1, Num c1) => m [((SirParams', Double, c1), z1)]
 > preMainK = do
 >   q <- testSolK
@@ -752,16 +736,7 @@ FIXME: Include code here
 >       qs = transpose $ map (map sirStateI) $ snd ps
 >   liftIO $ chart "Generated" (zip us q) qs "diagrams/generateds"
 >   bar <- runReaderT (pmh topF topG topD (SirParamsD params 0.05 0.05) sirParamsUpd initParticles (map Observed actuals) (params, fst ps, 0.0) 10) stdGen
->   baz <- runReaderT foo stdGen
 >   return bar
-
-> preMainK' :: (KatipContext m) => m Double
-> preMainK' = do
->   setStdGen (mkStdGen 42)
->   g <- newStdGen
->   stdGen <- newIOGenM g
->   baz <- runReaderT foo stdGen
->   return baz
 
 > main :: IO ()
 > main = do
