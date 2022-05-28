@@ -130,7 +130,8 @@ FIXME: I seem to have used two different notations
 > {-# OPTIONS_GHC -Wno-type-defaults #-}
 
 > module Main (
-> main
+>   main
+> , test1
 > ) where
 
 > import           Numeric.Sundials
@@ -145,7 +146,7 @@ FIXME: I seem to have used two different notations
 > import           Data.List (transpose, unfoldr, mapAccumL)
 > import           Distribution.Utils.MapAccum
 > import           System.Random
-> import           System.Random.Stateful (newIOGenM)
+> import           System.Random.Stateful (newIOGenM, IOGenM)
 
 > import           Data.Random.Distribution.Normal
 > import qualified Data.Random as R
@@ -157,17 +158,7 @@ FIXME: I seem to have used two different notations
 > import           Data.OdeSettings
 > import           Data.Chart
 
-> mu0Test :: Double
-> mu0Test = 0.0
-
-> sigma02Test :: Double
-> sigma02Test = 1.0
-
-> sigmaTest :: Double
-> sigmaTest = 0.5
-
-> nObs :: Int
-> nObs = 1000
+> import Debug.Trace
 
 </details>
 
@@ -232,11 +223,11 @@ $$
 >              zipWith (-) log_w (replicate bigN (maximum log_w))
 >       swn  = sum wn
 >       wn'  = map (/ swn) wn
-
+>   -- trace (show wn') $ return ()
 >   b <- resampleStratified wn'
 >   let a              = map (\i -> i - 1) b
 >       stateResampled = map (\i -> statePrev!!(a!!i)) [0 .. bigN - 1]
-
+>   -- trace (show b) $ return ()
 >   statePredicted <- mapM ff stateResampled
 >   obsPredicted <- mapM g statePredicted
 
@@ -248,27 +239,30 @@ $$
 >       predictiveLikelihood =   maxWeight
 >                              + log swm
 >                              - log (fromIntegral bigN)
-
+>   -- trace (show $ map (/ swm) wm) $ return ()
 >   return (obsPredicted, ds, predictiveLikelihood, statePredicted)
 
 > d :: Double -> Double -> Double
 > d x y = R.logPdf (Normal x sigmaTest) y
 
 > generatePrior :: MonadIO m => Double -> Double -> Int -> m [Double]
-> generatePrior mu sigmaTest nParticles = do
+> generatePrior mu s nParticles = do
 >   setStdGen (mkStdGen 42)
 >   g <- newStdGen
 >   stdGen <- newIOGenM g
->   runReaderT (replicateM nParticles $ R.sample $ normal mu sigmaTest) stdGen
+>   runReaderT (replicateM nParticles $ R.sample $ normal mu s) stdGen
 
 > h :: (R.StatefulGen g m, MonadReader g m) =>
->      [Double] ->
+>      [a] ->
 >      Int ->
->      (Double, [Double]) ->
->      m [(Particles Double, Particles Double)]
-> h prior nParticles (mu, obs) = do
+>      (a -> m a) ->
+>      (a -> m b) ->
+>      (b -> b -> Double) ->
+>      [b] ->
+>      m [(Particles a, Particles Double)]
+> h prior nParticles ff gg dd obs = do
 >   let initWeights = replicate nParticles (recip $ fromIntegral nParticles)
->   ps <- mapAccumM (myPf return return d) (prior, initWeights) obs
+>   ps <- mapAccumM (myPf ff gg dd) (prior, initWeights) obs
 >   return $ snd ps
 
 > myPf :: (R.StatefulGen g m, MonadReader g m) =>
@@ -282,43 +276,85 @@ $$
 >   (_, wsNew, _, psNew) <- pf psPrev ff gg dd wsPrev ob
 >   return ((psNew, wsNew), (psNew, wsNew))
 
-> runFilter :: MonadIO m => [Double] -> Int -> Double -> [Double] ->
->              m [(Particles Double, Particles Double)]
-> runFilter prior nParticles mu0 samples = do
+> runFilter :: MonadIO m => [a] ->
+>                           Int ->
+>                           (a -> ReaderT (IOGenM StdGen) m a) ->
+>                           (a -> ReaderT (IOGenM StdGen) m b) ->
+>                           (b -> b -> Double) ->
+>                           [b] ->
+>                           m [(Particles a, Particles Double)]
+> runFilter prior nParticles ff gg dd samples = do
 >   setStdGen (mkStdGen 42)
 >   g' <- newStdGen
 >   stdGen' <- newIOGenM g'
->   runReaderT (h prior nParticles (mu0, samples)) stdGen'
+>   runReaderT (h prior nParticles ff gg dd samples) stdGen'
+
+> mu0Test :: Double
+> mu0Test = 0.0
+
+> sigma02Test :: Double
+> sigma02Test = 1.0
+
+> sigmaTest :: Double
+> sigmaTest = 0.1
+
+> nObs :: Int
+> nObs = 1000
+
 
 > test1 :: IO ()
 > test1 = do
 >   print "Prior paramaters"
->   print mu0Test
->   print sigma02Test
->   let obsN = 1
+>   print (mu0Test, sigma02Test)
+>   let obsN = 2
 >   (mu, samples) <- generateSamples mu0Test sigma02Test obsN
 >   print "Mean to be estimated (sampled from hyperparameters)"
 >   print mu
->   let f = exact sigmaTest
->   let foo :: ((Double, Double), [(Double, Double)])
->       foo = mapAccumL (\s x -> (f s x, f s x)) (mu0Test, sigma02Test) samples
->   print foo
->   let n = 100
->   prior <- generatePrior mu0Test sigma02Test n
+>   let n = 1000
+>   prior <- generatePrior mu0Test (sqrt sigma02Test) n
 >   let priorSampledMean = sum prior / fromIntegral n
+>       priorSampledMean2 = sum (map (\x -> x * x) prior) / fromIntegral n
+>       priorSampledVar = priorSampledMean2 - priorSampledMean * priorSampledMean
 >   print "Prior Sampled Mean"
 >   print priorSampledMean
->   b <- runFilter prior n mu samples
->   print "Approximate"
->   let x1s = map (/ fromIntegral n) $
->             map sum $
->             map fst b
->       x2s = map (/ fromIntegral n) $
->             map sum $
->             map (map (\x -> x * x)) $
->             map fst b
->   print x1s
->   return ()
+>   print "Prior Sampled Variance"
+>   print priorSampledVar
+>   print "First observation"
+>   print (samples!!0)
+>   print "Posterior parameters exact"
+>   let p1Exact = exact sigmaTest (mu0Test, sigma02Test) (samples!!0)
+>   print p1Exact
+>   p1Samples <- runFilter prior n
+>                          return return
+>                          (\x y -> R.logPdf (Normal x (sqrt sigmaTest)) y)
+>                          (take 2 samples)
+>   let p1m1 = map (/ fromIntegral n) $
+>              map sum $
+>              map fst p1Samples
+>       p1m2 = map (/ fromIntegral n) $
+>              map sum $
+>              map (map (\x -> x * x)) $
+>              map fst p1Samples
+>       p1v  = zipWith(\p1m1 p1m2 -> p1m2 - p1m1 * p1m1) p1m1 p1m2
+>   print "Posterior parameters approximate"
+>   print p1m1
+>   print p1v
+
+   let f = exact sigmaTest
+   let foo :: ((Double, Double), [(Double, Double)])
+       foo = mapAccumL (\s x -> (f s x, f s x)) (mu0Test, sigma02Test) samples
+   print foo
+   b <- runFilter prior n mu samples
+   print "Approximate"
+   let x1s = map (/ fromIntegral n) $
+             map sum $
+             map fst b
+       x2s = map (/ fromIntegral n) $
+             map sum $
+             map (map (\x -> x * x)) $
+             map fst b
+   print x1s
+   return ()
 
 
 *Susceptible, Infected, Recovered: Influenza in a Boarding School*
