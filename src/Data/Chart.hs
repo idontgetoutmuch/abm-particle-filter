@@ -7,7 +7,8 @@
 
 module Data.Chart (
   chart,
-  chart'
+  chart',
+  barChart
   ) where
 
 import System.FilePath ()
@@ -18,6 +19,8 @@ import Graphics.Rendering.Chart.Backend.Diagrams
 import Diagrams.Backend.SVG.CmdLine
 import Diagrams.Prelude hiding ( sample, render )
 import System.Environment
+import Text.Printf
+
 
 chartAux :: String ->
             [(Double, Double)] ->
@@ -83,3 +86,33 @@ chartAux' title plt xs plts yss = toRenderable layout
                              map (toPlot . sinusoidsT) (zip plts (map (zip (map fst xs)) titledLines)) ++
                              map (toPlot . sinusoidsU . (zip (map fst xs))) untitledLines
            $ def
+
+barChart ::  [(Double, Double)] -> String -> IO ()
+barChart xs fn = do
+  denv <- defaultEnv vectorAlignmentFns 500 500
+  let dia :: Diagram B
+      dia = fst $ runBackend denv ((render (barChartAux xs)) (500, 500))
+  withArgs ["-o" ++ fn ++ ".svg"] (mainWith dia)
+
+barChartAux :: [(Double, Double)] ->
+            Graphics.Rendering.Chart.Renderable ()
+barChartAux bvs = toRenderable layout
+  where
+    layout =
+      layout_title .~ title
+      $ layout_x_axis . laxis_generate .~ autoIndexAxis (map (printf "%3.2f" . fst) bvs)
+
+      $ layout_y_axis . laxis_title .~ "Frequency"
+      $ layout_plots .~ (map plotBars plots)
+      $ def
+
+    title = "Posterior via MCMC"
+
+    plots = [ bars1 ]
+
+    bars1 =
+      plot_bars_titles .~ ["MCMC"]
+      $ plot_bars_values .~ addIndexes (map return $ map snd bvs)
+      $ plot_bars_style .~ BarsClustered
+      $ plot_bars_item_styles .~ [(solidFillStyle (blue `withOpacity` 0.25), Nothing)]
+      $ def

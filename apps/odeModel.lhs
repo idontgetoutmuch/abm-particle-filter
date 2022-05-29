@@ -54,7 +54,8 @@ able to find a good ABM library in Haskell.
 Examples
 ========
 
-*Estimating the Mean of a Normal Distirbution (with Known Variance)*
+Estimating the Mean of a Normal Distirbution (with Known Variance)
+------------------------------------------------------------------
 
 Suppose we can draw samples from a normal distribution with unknown
 mean and known variance and wish to estimate the mean. In classical
@@ -159,6 +160,12 @@ FIXME: I seem to have used two different notations
 > import           Data.OdeSettings
 > import           Data.Chart
 
+> import           Data.Histogram ()
+> import qualified Data.Histogram as H
+> import           Data.Histogram.Generic (Histogram)
+> import           Data.Histogram.Fill
+> import qualified Data.Vector.Unboxed as VU
+
 </details>
 
 Let's generate a mean for the distribution and then some samples from it
@@ -170,12 +177,41 @@ Let's generate a mean for the distribution and then some samples from it
 >   xs <- replicateM n $ R.sample $ normal mu sigma
 >   return (mu, xs)
 
-> generateSamples :: MonadIO m => Double -> Double -> Int -> m (Double, [Double])
+> generateSamples :: MonadIO m =>
+>                    Double -> Double -> Int -> m (Double, [Double])
 > generateSamples mu0 sigma02 nObs = do
 >   setStdGen (mkStdGen 42)
 >   g <- newStdGen
 >   stdGen <- newIOGenM g
 >   runReaderT (fakeObs nObs mu0Test sigma02Test sigmaTest) stdGen
+
+
+<details class="code-details">
+<summary>Code for Drawing Histogram of Generated Samples</summary>
+
+> numBins :: Int
+> numBins = 1000
+
+> hb :: HBuilder Double (Histogram VU.Vector BinD Double)
+> hb = forceDouble -<< mkSimple (binD lower numBins upper)
+>   where
+>     lower = -4.0
+>     upper = 4.0
+
+> hist :: IO (Histogram VU.Vector BinD Double)
+> hist = do
+>   (_m0, ss) <- generateSamples mu0Test sigma02Test 10000
+>   return $ fillBuilder hb ss
+
+> drawBar :: IO ()
+> drawBar = do
+>   g <- hist
+>   barChart (zip (map fst $ H.asList g) (map snd $ H.asList g))
+>            "diagrams/barChart"
+
+</details>
+
+![](diagrams/barChart.svg)
 
 We'd like to use the samples to recover the mean. Here's the update
 for one observation
@@ -193,7 +229,7 @@ And we can test after many samples (since the data is very noisy) that we get ba
 > test = let f = exact sigmaTest in
 >        fst <$>
 >        mapAccumL (\s x -> (f s x, f s x)) (mu0Test, sigma02Test) <$>
->        snd <$> generateSamples mu0Test sigma02Test 1000000
+>        snd <$> generateSamples mu0Test sigma02Test 100
 
 We can re-write this problem in a way suitable for particle filtering:
 
@@ -292,7 +328,7 @@ $$
 > sigma02Test = 1.0
 
 > sigmaTest :: Double
-> sigmaTest = 0.1
+> sigmaTest = 0.2
 
 > test1 :: IO ()
 > test1 = do
@@ -740,6 +776,7 @@ FIXME: Include code here
 
 > main :: IO ()
 > main = do
+>   drawBar
 >   handleScribe <- mkHandleScribeWithFormatter myBracketFormat ColorIfTerminal stderr (permitItem DebugS) V2
 >   logEnv <- registerScribe "stderr" handleScribe defaultScribeSettings =<< initLogEnv "test" "devel"
 >   r <- runKatipContextT logEnv (mempty :: LogContexts) mempty preMainK
