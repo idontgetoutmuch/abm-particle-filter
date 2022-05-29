@@ -119,6 +119,7 @@ let
     Chart
     Chart-diagrams
     diagrams-svg
+    histogram-fill
   ];
 
   # FIXME: One day I will be able to use julia with nix

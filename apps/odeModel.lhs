@@ -37,12 +37,13 @@ from it even though most expositions of particle filtering assume that
 this likelihood is available. What gives? It turns out that taking a
 different approach to mathematics behind particle filtering,
 Feynman-Kac models, only makes the assumption that you can sample from
-the state update and likelihood might not even exist (FIXME: check
-this). All the details can be found in @chopin2020introduction and
-further details in @moral2004feynman, @cappé2006inference. Further
-examples of the application of particle filtering or more correctly
-Sequential Monte Carlo (SMC) can be found in @Dai, @Endo2019, @Dahlin,
-@Svensson.
+the state update and likelihood might not even exist. All the details
+can be found in @chopin2020introduction and further details in
+@moral2004feynman, @cappé2006inference. Further examples of the
+application of particle filtering or more correctly Sequential Monte
+Carlo (SMC) can be found in
+@https://doi.org/10.48550/arxiv.2007.11936, @Endo2019, @JSSv088c02,
+@it:2016-008.
 
 I have put a summary of the mathematics in an appendix. The main body
 of this blog deals with the application of SMC (or particle filtering)
@@ -50,8 +51,349 @@ to an example where the model could be an ABM. I've actually used a
 model based on differential equations purely because I haven't been
 able to find a good ABM library in Haskell.
 
-Example
-=======
+Examples
+========
+
+Estimating the Mean of a Normal Distirbution (with Known Variance)
+------------------------------------------------------------------
+
+Suppose we can draw samples from a normal distribution with unknown
+mean and known variance and wish to estimate the mean. In classical
+statistics we would estimate this by
+
+$$
+\bar{x} = \frac{1}{n}\sum_{i=1}^n x_{i}
+$$
+
+where $n$ is the number of samples.
+
+In Bayesian statistics we have a prior distribution for the unknown
+mean which we also take to be normal
+
+$$
+P\left(\mu \mid \mu_{0}, \sigma_{0}^{2}\right) \propto \frac{1}{\sigma_{0}} \exp \left(-\frac{1}{2 \sigma_{0}^{2}}\left(\mu-\mu_{0}\right)^{2}\right)
+$$
+
+and then use a sample
+
+$$
+P\left(x \mid \mu, \sigma^{2}\right) \propto \frac{1}{\sigma^{n}} \exp \left(-\frac{1}{2 \sigma^{2}} \left(x-\mu\right)^{2}\right)
+$$
+
+to produce a posterior distribution for it
+
+$$
+\mu \mid x \sim \mathcal{N}\left(\frac{\sigma_{0}^{2}}{\sigma^{2}+\sigma_{0}^{2}} x+\frac{\sigma^{2}}{\sigma^{2}+\sigma_{0}^{2}} \mu_{0},\left(\frac{1}{\sigma_{0}^{2}}+\frac{1}{\sigma^{2}}\right)^{-1}\right)
+$$
+
+If we continue to take samples then the posterior distribution becomes
+
+$$
+\mu \mid x_{1}, x_{2}, \cdots, x_{n} \sim \mathcal{N}\left(\frac{\sigma_{0}^{2}}{\frac{\sigma^{2}}{n}+\sigma_{0}^{2}} \bar{x}+\frac{\sigma^{2}}{\frac{\sigma^{2}}{n}+\sigma_{0}^{2}} \mu_{0},\left(\frac{1}{\sigma_{0}^{2}}+\frac{n}{\sigma^{2}}\right)^{-1}\right)
+$$
+
+Note that if we take $\sigma_0$ to be very large (we have little prior
+information about the value of $\mu$) then
+
+$$
+\mu \mid x_{1}, x_{2}, \cdots, x_{n} \sim \mathcal{N}\left(\bar{x},\left(\frac{1}{\sigma_{0}^{2}}+\frac{n}{\sigma^{2}}\right)^{-1}\right)
+$$
+
+and if we take $n$ to be very large then
+
+$$
+\mu \mid x_{1}, x_{2}, \cdots, x_{n} \sim \mathcal{N}\left(\bar{x},\frac{\sigma}{\sqrt{n}}\right)
+$$
+
+which ties up with the classical estimate.
+
+FIXME: I seem to have used two different notations
+
+<details class="code-details">
+<summary>Extensions and imports (for the over-enthusiatic reader only)</summary>
+
+> {-# LANGUAGE ScopedTypeVariables #-}
+> {-# LANGUAGE FlexibleContexts    #-}
+> {-# LANGUAGE OverloadedLists     #-}
+> {-# LANGUAGE OverloadedStrings   #-}
+> {-# LANGUAGE NumDecimals         #-}
+> {-# LANGUAGE ViewPatterns        #-}
+> {-# LANGUAGE BangPatterns        #-}
+> {-# LANGUAGE QuasiQuotes         #-}
+> {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+> {-# LANGUAGE MultiParamTypeClasses #-}
+> {-# LANGUAGE FlexibleInstances #-}
+> {-# LANGUAGE TypeFamilies #-}
+
+> {-# LANGUAGE TemplateHaskell   #-}
+
+> {-# OPTIONS_GHC -Wall              #-}
+> {-# OPTIONS_GHC -Wno-type-defaults #-}
+
+> module Main (
+>   main
+> , test
+> , test1
+> ) where
+
+> import           Numeric.Sundials
+> import           Numeric.LinearAlgebra
+> import           Prelude hiding (putStr, writeFile)
+
+> import           Katip
+> import           Katip.Monadic ()
+> import           System.IO
+
+> import qualified Data.Vector.Storable as VS
+> import           Data.List (transpose, mapAccumL)
+> import           Distribution.Utils.MapAccum
+> import           System.Random
+> import           System.Random.Stateful (newIOGenM, IOGenM)
+
+> import           Data.Random.Distribution.Normal
+> import qualified Data.Random as R
+> import           Data.Kind (Type)
+
+> import           Control.Monad.Reader
+
+> import           Data.PMMH hiding (pf)
+> import           Data.OdeSettings
+> import           Data.Chart
+
+> import           Data.Histogram ()
+> import qualified Data.Histogram as H
+> import           Data.Histogram.Generic (Histogram)
+> import           Data.Histogram.Fill
+> import qualified Data.Vector.Unboxed as VU
+
+</details>
+
+Let's generate a mean for the distribution and then some samples from it
+
+> fakeObs :: (R.StatefulGen g m, MonadReader g m) =>
+>            Int -> Double -> Double -> Double -> m (Double, [Double])
+> fakeObs n mu0 sigma02 sigma = do
+>   mu <- R.sample (normal mu0 sigma02)
+>   xs <- replicateM n $ R.sample $ normal mu sigma
+>   return (mu, xs)
+
+> generateSamples :: MonadIO m =>
+>                    Double -> Double -> Int -> m (Double, [Double])
+> generateSamples mu0 sigma02 nObs = do
+>   setStdGen (mkStdGen 42)
+>   g <- newStdGen
+>   stdGen <- newIOGenM g
+>   runReaderT (fakeObs nObs mu0Test sigma02Test sigmaTest) stdGen
+
+
+<details class="code-details">
+<summary>Code for Drawing Histogram of Generated Samples</summary>
+
+> numBins :: Int
+> numBins = 1000
+
+> hb :: HBuilder Double (Histogram VU.Vector BinD Double)
+> hb = forceDouble -<< mkSimple (binD lower numBins upper)
+>   where
+>     lower = -4.0
+>     upper = 4.0
+
+> hist :: IO (Histogram VU.Vector BinD Double)
+> hist = do
+>   (_m0, ss) <- generateSamples mu0Test sigma02Test 10000
+>   return $ fillBuilder hb ss
+
+> drawBar :: IO ()
+> drawBar = do
+>   g <- hist
+>   barChart (zip (map fst $ H.asList g) (map snd $ H.asList g))
+>            "diagrams/barChart"
+
+</details>
+
+![](diagrams/barChart.svg)
+
+We'd like to use the samples to recover the mean. Here's the update
+for one observation
+
+> exact :: Double -> (Double, Double) -> Double -> (Double, Double)
+> exact s2 (mu0, s02) x = (mu1, s12)
+>   where
+>     mu1 = x   * s02 / (s2 + s02) +
+>           mu0 * s2  / (s2 + s02)
+>     s12 = recip (recip s02 + recip s2)
+
+And we can test after many samples (since the data is very noisy) that we get back a reasonable estimate
+
+> test :: MonadIO m => m (Double, Double)
+> test = let f = exact sigmaTest in
+>        fst <$>
+>        mapAccumL (\s x -> (f s x, f s x)) (mu0Test, sigma02Test) <$>
+>        snd <$> generateSamples mu0Test sigma02Test 100
+
+We can re-write this problem in a way suitable for particle filtering:
+
+
+$$
+\begin{aligned}
+x_0 &\sim {\mathcal{N}}(\mu_0, \sigma_0^2) \\
+x_{i} &= x_{i-1} \\
+y_i   &= x_i + \epsilon_i
+\end{aligned}
+$$
+
+> pf :: forall m g a b . (R.StatefulGen g m,
+>                           MonadReader g m) =>
+>       Particles a ->
+>       (a -> m a) ->
+>       (a -> m b) ->
+>       (b -> b -> Double) ->
+>       Particles Double ->
+>       b ->
+>       m (Particles b, Particles Double, Double, Particles a)
+> pf statePrev ff g dd log_w y = do
+
+>   let bigN = length log_w
+>       wn   = map exp $
+>              zipWith (-) log_w (replicate bigN (maximum log_w))
+>       swn  = sum wn
+>       wn'  = map (/ swn) wn
+>
+>   b <- resampleStratified wn'
+>   let a              = map (\i -> i - 1) b
+>       stateResampled = map (\i -> statePrev!!(a!!i)) [0 .. bigN - 1]
+>
+>   statePredicted <- mapM ff stateResampled
+>   obsPredicted <- mapM g statePredicted
+
+>   let ds                   = map (dd y) obsPredicted
+>       maxWeight            = maximum ds
+>       wm                   = map exp $
+>                              zipWith (-) ds (replicate bigN maxWeight)
+>       swm                  = sum wm
+>       predictiveLikelihood =   maxWeight
+>                              + log swm
+>                              - log (fromIntegral bigN)
+>
+>   return (obsPredicted, ds, predictiveLikelihood, statePredicted)
+
+> generatePrior :: MonadIO m => Double -> Double -> Int -> m [Double]
+> generatePrior mu s nps = do
+>   setStdGen (mkStdGen 42)
+>   g <- newStdGen
+>   stdGen <- newIOGenM g
+>   runReaderT (replicateM nps $ R.sample $ normal mu s) stdGen
+
+> h :: (R.StatefulGen g m, MonadReader g m) =>
+>      [a] ->
+>      Int ->
+>      (a -> m a) ->
+>      (a -> m b) ->
+>      (b -> b -> Double) ->
+>      [b] ->
+>      m [(Particles a, Particles Double)]
+> h prior nps ff gg dd obs = do
+>   let iws = replicate nps (recip $ fromIntegral nps)
+>   ps <- mapAccumM (myPf ff gg dd) (prior, iws) obs
+>   return $ snd ps
+
+> myPf :: (R.StatefulGen g m, MonadReader g m) =>
+>         (a -> m a)
+>      -> (a -> m b)
+>      -> (b -> b -> Double)
+>      -> (Particles a, Particles Double)
+>      -> b
+>      -> m ((Particles a, Particles Double), (Particles a, Particles Double))
+> myPf ff gg dd (psPrev, wsPrev) ob = do
+>   (_, wsNew, _, psNew) <- pf psPrev ff gg dd wsPrev ob
+>   return ((psNew, wsNew), (psNew, wsNew))
+
+> runFilter :: MonadIO m => [a] ->
+>                           Int ->
+>                           (a -> ReaderT (IOGenM StdGen) m a) ->
+>                           (a -> ReaderT (IOGenM StdGen) m b) ->
+>                           (b -> b -> Double) ->
+>                           [b] ->
+>                           m [(Particles a, Particles Double)]
+> runFilter prior nps ff gg dd samples = do
+>   setStdGen (mkStdGen 42)
+>   g'' <- newStdGen
+>   stdGen' <- newIOGenM g''
+>   runReaderT (h prior nps ff gg dd samples) stdGen'
+
+> mu0Test :: Double
+> mu0Test = 0.0
+
+> sigma02Test :: Double
+> sigma02Test = 1.0
+
+> sigmaTest :: Double
+> sigmaTest = 0.2
+
+> test1 :: IO ()
+> test1 = do
+>   print "Prior paramaters"
+>   print (mu0Test, sigma02Test)
+>   let obsN = 2
+>   (mu, samples) <- generateSamples mu0Test sigma02Test obsN
+>   print "Mean to be estimated (sampled from hyperparameters)"
+>   print mu
+>   let n = 1000
+>   prior <- generatePrior mu0Test (sqrt sigma02Test) n
+>   let priorSampledMean = sum prior / fromIntegral n
+>       priorSampledMean2 = sum (map (\x -> x * x) prior) / fromIntegral n
+>       priorSampledVar = priorSampledMean2 - priorSampledMean * priorSampledMean
+>   print "Prior Sampled Mean"
+>   print priorSampledMean
+>   print "Prior Sampled Variance"
+>   print priorSampledVar
+>   print "First observation"
+>   print (samples!!0)
+>   print "Posterior parameters exact"
+>   let p1Exact = exact sigmaTest (mu0Test, sigma02Test) (samples!!0)
+>   print p1Exact
+>   p1Samples <- runFilter prior n
+>                          return return
+>                          (\x y -> R.logPdf (Normal x (sqrt sigmaTest)) y)
+>                          (take 2 samples)
+>   let p1m1s = map (/ fromIntegral n) $
+>               map sum $
+>               map fst p1Samples
+>       p1m2s = map (/ fromIntegral n) $
+>               map sum $
+>               map (map (\x -> x * x)) $
+>               map fst p1Samples
+>       p1v  = zipWith(\p1m1 p1m2 -> p1m2 - p1m1 * p1m1) p1m1s p1m2s
+>   print "Posterior parameters approximate"
+>   print p1m1s
+>   print p1v
+
+   let f = exact sigmaTest
+   let foo :: ((Double, Double), [(Double, Double)])
+       foo = mapAccumL (\s x -> (f s x, f s x)) (mu0Test, sigma02Test) samples
+   print foo
+   b <- runFilter prior n mu samples
+   print "Approximate"
+   let x1s = map (/ fromIntegral n) $
+             map sum $
+             map fst b
+       x2s = map (/ fromIntegral n) $
+             map sum $
+             map (map (\x -> x * x)) $
+             map fst b
+   print x1s
+   return ()
+
+
+*Susceptible, Infected, Recovered: Influenza in a Boarding School*
+
+In 1978, anonymous authors sent a note to the British Medical Journal
+reporting an influenza outbreak in a boarding school in the north of
+England (@bmj-influenza). The chart below shows the solution of the
+SIR (Susceptible, Infected, Record) model with parameters which give
+roughly the results observed in the school.
+
+![](diagrams/modelRoughly.svg)
 
 The Susceptible / Infected / Recovered (SIR) model has three
 parameters: one describing how infectious the pathogen is ($\beta$), one
@@ -98,84 +440,7 @@ A Deterministic Haskell Model
 -----------------------------
 
 <details class="code-details">
-<summary>Extensions and imports for this Literate Haskell file</summary>
-
-> {-# LANGUAGE ScopedTypeVariables #-}
-> {-# LANGUAGE FlexibleContexts    #-}
-> {-# LANGUAGE OverloadedLists     #-}
-> {-# LANGUAGE OverloadedStrings   #-}
-> {-# LANGUAGE NumDecimals         #-}
-> {-# LANGUAGE ViewPatterns        #-}
-> {-# LANGUAGE BangPatterns        #-}
-> {-# LANGUAGE QuasiQuotes         #-}
-> {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-> {-# LANGUAGE MultiParamTypeClasses #-}
-> {-# LANGUAGE FlexibleInstances #-}
-> {-# LANGUAGE TypeFamilies #-}
-
-> {-# LANGUAGE TemplateHaskell   #-}
-
-> {-# OPTIONS_GHC -Wall              #-}
-> {-# OPTIONS_GHC -Wno-type-defaults #-}
-
-> module Main (
-> main
-> ) where
-
-> import           Numeric.Sundials
-> import           Numeric.LinearAlgebra
-> import           Prelude hiding (putStr, writeFile)
->
-> import           Katip
-> import           Katip.Monadic ()
-> import           System.IO
->
-> import qualified Data.Vector.Storable as VS
-> import           Data.List (transpose)
-> import           System.Random
-> import           System.Random.Stateful (newIOGenM)
->
-> import           Data.Random.Distribution.Normal
-> import qualified Data.Random as R
-> import           Data.Kind (Type)
->
-> import           Control.Monad.Reader
->
-> import           Data.PMMH
-> import           Data.OdeSettings
-> import           Data.Chart
-
-</details>
-
-Basic Reproduction Number
--------------------------
-
-If $\beta$ were constant, then $R_0 \triangleq \beta / \gamma$ would
-also be constant: the famous *basic reproduction number* for the SIR
-model.
-
-When the transmission rate is time-varying, then $R_0(t)$ is a
-time-varying version of the basic reproduction number.
-
-Prior to solving the model directly, we make a few changes:
-
-- Re-parameterize using $\beta(t) = \gamma R_0(t)$
-- Define the proportion of individuals in each state as $ s \triangleq S/N $ etc.
-- Divide each equation by $ N $, and write the system of ODEs in terms of the proportions
-
-$$
-\begin{aligned}
-     \frac{d s}{d t}  & = - \gamma \, R_0 \, s \,  i
-     \\
-     \frac{d e}{d t}   & = \gamma \, R_0 \, s \,  i  - \gamma i
-     \\
-      \frac{d r}{d t}  & = \gamma  i
-\end{aligned}
-$$
-
-
-<details class="code-details">
-<summary>Extensions and imports for this Literate Haskell file</summary>
+<summary>Data Types</summary>
 
 > data SirState = SirState {
 >     sirStateS :: Double
@@ -199,15 +464,26 @@ $$
 >   , sirP     :: SirParams
 >   } deriving (Eq, Show)
 
-> data Sir' = Sir' {
+> data SirReparam = SirReparam {
 >     sirS'     :: SirState
 >   , sirP'     :: SirParams'
 >   } deriving (Eq, Show)
 
 </details>
 
+As in most languages, it's easy enough to define the actual ODE
+problem itself and then run a solver to return the results and then
+plot them. Here we are using a 4-th order implicit method from the
+[SUNDIALS ODE solver
+package](https://sundials.readthedocs.io/en/latest/arkode/Butcher_link.html#sdirk-5-3-4)
+but almost any solver would have worked for the set of equations we
+using as our example.
 
-Define the actual ODE problem itself (FIXME: we can hide a lot more of the unnecessary details)
+I have hidden the details which can made be visible if the reader is
+interested.
+
+<details class="code-details">
+<summary>ODE Solver</summary>
 
 > sir :: Vector Double -> Sir -> OdeProblem
 > sir ts ps = emptyOdeProblem
@@ -227,7 +503,7 @@ Define the actual ODE problem itself (FIXME: we can hide a lot more of the unnec
 >         , gamma * i
 >         ]
 >     f _ _ = error $ "Incorrect number of parameters"
->
+
 >     beta  = realToFrac (sirParamsBeta  $ sirP ps)
 >     c     = realToFrac (sirParamsC     $ sirP ps)
 >     gamma = realToFrac (sirParamsGamma $ sirP ps)
@@ -235,8 +511,64 @@ Define the actual ODE problem itself (FIXME: we can hide a lot more of the unnec
 >     initI = realToFrac (sirStateI $ sirS ps)
 >     initR = realToFrac (sirStateR $ sirS ps)
 
-> sir' :: Vector Double -> Sir' -> OdeProblem
-> sir' ts ps = emptyOdeProblem
+> solK :: (MonadIO m, Katip m) =>
+>         (a -> b -> OdeProblem) -> b -> a -> m (Matrix Double)
+> solK s ps ts = do
+>   x <- solve (defaultOpts $ ARKMethod SDIRK_5_3_4) (s ts ps)
+>   case x of
+>     Left e  -> error $ show e
+>     Right y -> return (solutionMatrix y)
+
+> testSolK :: (MonadIO m, KatipContext m) => m [Double]
+> testSolK = do
+>   m <- solK sir (Sir (SirState 762 1 0) (SirParams 0.2 10.0 0.5)) (vector us)
+>   let n = tr m
+>   return $ toList (n!1)
+
+</details>
+
+Here's the results of running the solver with $R_0 = 4.0, \kappa =0.5$
+and with $R_0 = 3.2, \kappa = 0.55$, the former an educated guess and
+the latter as a result of running the inference method which is the
+main subject of this blog post.
+
+![](diagrams/modelActuals.svg)
+
+Generalising the Model
+======================
+
+Basic Reproduction Number
+-------------------------
+
+
+If $\beta$ were constant, then $R_0 := \beta / \gamma$ would
+also be constant: the famous *basic reproduction number* for the SIR
+model.
+
+When the transmission rate is time-varying, then $R_0(t)$ is a
+time-varying version of the basic reproduction number.
+
+Prior to solving the model directly, we make a few changes:
+
+- Re-parameterize using $\beta(t) = \gamma R_0(t)$
+- Define the proportion of individuals in each state as $ s := S/N $ etc.
+- Divide each equation by $ N $, and write the system of ODEs in terms of the proportions
+
+$$
+\begin{aligned}
+     \frac{d s}{d t}  & = - \gamma \, R_0 \, s \,  i
+     \\
+     \frac{d e}{d t}   & = \gamma \, R_0 \, s \,  i  - \gamma i
+     \\
+      \frac{d r}{d t}  & = \gamma  i
+\end{aligned}
+$$
+
+<details class="code-details">
+<summary>Re-parameterised ODE Solver</summary>
+
+> sirReparam :: Vector Double -> SirReparam -> OdeProblem
+> sirReparam ts ps = emptyOdeProblem
 >   { odeRhs = odeRhsPure f
 >   , odeJacobian = Nothing
 >   , odeInitCond = [initS, initI, initR]
@@ -253,20 +585,12 @@ Define the actual ODE problem itself (FIXME: we can hide a lot more of the unnec
 >         , kappa * i
 >         ]
 >     f _ _ = error $ "Incorrect number of parameters"
->
+
 >     r0 = realToFrac (sirParamsR0  $ sirP' ps)
 >     kappa = realToFrac (sirParamsKappa $ sirP' ps)
 >     initS = realToFrac (sirStateS $ sirS' ps)
 >     initI = realToFrac (sirStateI $ sirS' ps)
 >     initR = realToFrac (sirStateR $ sirS' ps)
-
-> solK :: (MonadIO m, Katip m) =>
->         (a -> b -> OdeProblem) -> b -> a -> m (Matrix Double)
-> solK s ps ts = do
->   x <- solve (defaultOpts $ ARKMethod SDIRK_5_3_4) (s ts ps)
->   case x of
->     Left e  -> error $ show e
->     Right y -> return (solutionMatrix y)
 
 > solK' :: (MonadIO m, Katip m) =>
 >         (a -> b -> OdeProblem) -> b -> a -> m (Matrix Double)
@@ -276,41 +600,22 @@ Define the actual ODE problem itself (FIXME: we can hide a lot more of the unnec
 >     Left e  -> error $ show e
 >     Right y -> return (solutionMatrix y)
 
-We can now run the model and compare its output to the actuals.
-
-> testSolK :: (MonadIO m, KatipContext m) => m [Double]
-> testSolK = do
->   m <- solK sir (Sir (SirState 762 1 0) (SirParams 0.2 10.0 0.5)) (vector us)
->   let n = tr m
->   return $ toList (n!1)
-
 > testSolK' :: (MonadIO m, KatipContext m) => m [Double]
 > testSolK' = do
->   m <- solK' sir' (Sir' (SirState 762 1 0) (SirParams' 4.0 0.5)) (vector us)
+>   m <- solK' sirReparam (SirReparam (SirState 762 1 0) (SirParams' 4.0 0.5)) (vector us)
 >   let n = tr m
 >   return $ toList (n!1)
 
 > testSolK'' :: (MonadIO m, KatipContext m) => m [Double]
 > testSolK'' = do
->   m <- solK' sir' (Sir' (SirState 762 1 0) (SirParams' 3.2 0.55)) (vector us)
+>   m <- solK' sirReparam (SirReparam (SirState 762 1 0) (SirParams' 3.2 0.55)) (vector us)
 >   let n = tr m
 >   return $ toList (n!1)
 
-![](diagrams/modelActuals.svg)
+</details>
 
-FIXME: Sadly this does not work and I would rather write the draft
-first and then fight with BlogLiterately.
-
-    [ghci]
-    import Data.List
-    :t transpose
-    import Numeric.LinearAlgebra
-    :t vector
-    import Data.PMMH
-    :t pf
-
-Generalising the Model
-======================
+Other
+-----
 
 We see that e.g. on day our model predicts 93 students in the sick bay
 while in fact there are 192 students there. What we would like to do
@@ -346,7 +651,7 @@ $$
 System of SDEs
 --------------
 
-The system can be written in vector form $ x \triangleq [s, i, r, R₀] $ with parameter tuple parameter tuple $ p \triangleq (\gamma, \eta, \sigma, \bar{R}_0) $
+The system can be written in vector form $x := [s, i, r, R_\theta]$ with parameter tuple parameter tuple $p := (\gamma, \eta, \sigma, \bar{R}_0)$
 
 The general form of the SDE is.
 
@@ -359,7 +664,7 @@ $$
 With the drift,
 
 $$
-F(x,t;p) \triangleq \begin{bmatrix}
+F(x,t;p) := \begin{bmatrix}
     -\gamma \, R_0 \, s \,  i
     \\
     \gamma \, R_0 \,  s \,  i  - \gamma i
@@ -377,7 +682,7 @@ As the source of Brownian motion only affects the $ d R_0 $ term (i.e. the 4th e
 
 $$
 \begin{aligned}
-G(x,t;p) &\triangleq \begin{bmatrix}
+G(x,t;p) &:= \begin{bmatrix}
 0 & 0 & 0 & 0 \\
 0 & 0 & 0 & 0 \\
 0 & 0 & 0 & 0 \\
@@ -389,7 +694,7 @@ $$
 > topF :: (MonadIO m, R.StatefulGen g m, MonadReader g m, Katip m) =>
 >          SirParams' -> SirState -> m SirState
 > topF ps qs = do
->   m <- solK' sir' (Sir' qs ps) [0.0, 1.0]
+>   m <- solK' sirReparam (SirReparam qs ps) [0.0, 1.0]
 >   newS <- R.sample (normal (log (m!1!0)) 0.1)
 >   newI <- R.sample (normal (log (m!1!1)) 0.1)
 >   newR <- R.sample (normal (log (m!1!2)) 0.1)
@@ -402,8 +707,9 @@ this case the observation function is particularly simple.
 
 > newtype Observed = Observed { observed :: Double } deriving (Eq, Show, Num, Fractional)
 
-> topG :: SirState -> Observed
-> topG = Observed . sirStateI
+> topG :: (MonadIO m, R.StatefulGen g m, MonadReader g m, Katip m) =>
+>         SirState -> m Observed
+> topG = return . Observed . sirStateI
 
 Particle Filtering in Practice
 =============================
@@ -455,8 +761,9 @@ FIXME: Include code here
 >   q <- testSolK
 >   r <- testSolK'
 >   s <- testSolK''
->   liftIO $ chart "Actuals" (zip us actuals) [q, r, s] "diagrams/modelActuals"
->
+>   liftIO $ chart' "Actuals / Original Model" "Actuals" (zip us actuals) ["Predicted"] [r] "diagrams/modelRoughly"
+>   liftIO $ chart' "Actuals / Original Model" "Actuals" (zip us actuals) ["R0 = 4.0 kappa = 0.5", "R0 = 3.2 kappa = 0.55"] [r, s] "diagrams/modelActuals"
+
 >   setStdGen (mkStdGen 42)
 >   g <- newStdGen
 >   stdGen <- newIOGenM g
@@ -467,17 +774,9 @@ FIXME: Include code here
 >   bar <- runReaderT (pmh topF topG topD (SirParamsD params 0.05 0.05) sirParamsUpd initParticles (map Observed actuals) (params, fst ps, 0.0) 10) stdGen
 >   return bar
 
-
-  ps <- runReaderT (predicteds (g' (topF (SirParams 0.2 10.0 0.5)) topG topD) initParticles initWeights (map Observed actuals)) stdGen
-  $(logTM) InfoS (logStr $ show $ fst ps)
-  let qs :: [[Double]]
-      qs = transpose $ map (map sirStateI) $ snd ps
-  liftIO $ chart (zip us q) qs "diagrams/generateds.svg"
-  bar <- runReaderT (pmh topF topG topD (SirParamsD (SirParams 0.2 10.0 0.5) 0.002 0.005 0.002) initParticles (map Observed actuals) (SirParams 0.2 10.0 0.5, fst ps, 0.0) 10) stdGen
-  return bar
-
 > main :: IO ()
 > main = do
+>   drawBar
 >   handleScribe <- mkHandleScribeWithFormatter myBracketFormat ColorIfTerminal stderr (permitItem DebugS) V2
 >   logEnv <- registerScribe "stderr" handleScribe defaultScribeSettings =<< initLogEnv "test" "devel"
 >   r <- runKatipContextT logEnv (mempty :: LogContexts) mempty preMainK
@@ -495,7 +794,7 @@ FIXME: Include code here
 >     return $ SirParams' { sirParamsR0    = b
 >                         , sirParamsKappa = c
 >                         }
->
+
 > instance R.PDF SirParamsD SirParams' where
 >   logPdf (SirParamsD mu sigmaR0 sigmaKappa) t = b + c
 >     where
@@ -618,7 +917,7 @@ $$
 and then assume that we are given a sequence of potential functions (the nomenclature appears to come from statistical physics) $G_0 : \mathcal{X} \rightarrow \mathbb{R}^+$ and $G_t : \mathcal{X} \times \mathcal{X} \rightarrow \mathbb{R}^+$ for $1 \leq t \leq T$. Then a sequence of Feynman-Kac models is given by a change of measure (FIXME: not even mentioned so far) from $\mathbb{M}_t$:
 
 $$
-\mathbb{Q}_t(\mathrm{d} x_{0:t}) \triangleq \frac{1}{L_t}G_0(x_0)\Bigg[\prod_{s=1}^t G_s(x_{s-1}, x_s)\Bigg]\mathbb{M}_t(\mathrm{d} x_{0:t})
+\mathbb{Q}_t(\mathrm{d} x_{0:t}) := \frac{1}{L_t}G_0(x_0)\Bigg[\prod_{s=1}^t G_s(x_{s-1}, x_s)\Bigg]\mathbb{M}_t(\mathrm{d} x_{0:t})
 $$
 
 (N.B. we don't yet know this is a Markov measure - have we even defined a Markov measure?)
@@ -681,17 +980,17 @@ $$
 If we define an operator $P$ on measures as:
 
 $$
-\mathrm{P} \rho \triangleq \int \rho(\mathrm{d}x)K\left(x, \mathrm{d}x^{\prime}\right)
+\mathrm{P} \rho := \int \rho(\mathrm{d}x)K\left(x, \mathrm{d}x^{\prime}\right)
 $$
 
 and an operator $C_t$ as:
 
 $$
-\mathrm{C}_{t} \rho \triangleq \frac{\rho(d x) f\left(x, y_{t}\right)}{\int \rho(d x) f\left(x, y_{t}\right)}
+\mathrm{C}_{t} \rho := \frac{\rho(d x) f\left(x, y_{t}\right)}{\int \rho(d x) f\left(x, y_{t}\right)}
 $$
 
 $$
-\pi_{n} \triangleq \mathbf{P}\left(X_{n} \in \cdot \mid Y_{1}, \ldots, Y_{n}\right)
+\pi_{n} := \mathbf{P}\left(X_{n} \in \cdot \mid Y_{1}, \ldots, Y_{n}\right)
 $$
 
 $$

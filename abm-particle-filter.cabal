@@ -43,7 +43,8 @@ library
         data-default-class,
         lens,
         diagrams-svg,
-        optparse-applicative
+        optparse-applicative,
+        histogram-fill
 
 executable ode-model
   main-is:             odeModel.lhs
