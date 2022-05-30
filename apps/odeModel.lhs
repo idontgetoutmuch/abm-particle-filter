@@ -37,7 +37,7 @@ from it even though most expositions of particle filtering assume that
 this likelihood is available. What gives? It turns out that taking a
 different approach to mathematics behind particle filtering,
 Feynman-Kac models, only makes the assumption that you can sample from
-the state update and likelihood might not even exist. All the details
+the state update: the likelihood need not even exist. All the details
 can be found in @chopin2020introduction and further details in
 @moral2004feynman, @cappé2006inference. Further examples of the
 application of particle filtering or more correctly Sequential Monte
@@ -51,6 +51,10 @@ to an example where the model could be an ABM. I've actually used a
 model based on differential equations purely because I haven't been
 able to find a good ABM library in Haskell.
 
+I assume you know something about Bayesian statistics: what the prior,
+the likelihood and posterior are. The appendix requires more
+background knowledge.
+
 Examples
 ========
 
@@ -58,8 +62,12 @@ Estimating the Mean of a Normal Distirbution (with Known Variance)
 ------------------------------------------------------------------
 
 Suppose we can draw samples from a normal distribution with unknown
-mean and known variance and wish to estimate the mean. In classical
-statistics we would estimate this by
+mean and known variance and wish to estimate the mean (in practice, we
+hardly every know the variance but not the mean but assuming this
+gives us a simple example in which we can analytically derive the
+posterior).
+
+In classical statistics we would estimate this by
 
 $$
 \bar{x} = \frac{1}{n}\sum_{i=1}^n x_{i}
@@ -71,13 +79,13 @@ In Bayesian statistics we have a prior distribution for the unknown
 mean which we also take to be normal
 
 $$
-P\left(\mu \mid \mu_{0}, \sigma_{0}^{2}\right) \propto \frac{1}{\sigma_{0}} \exp \left(-\frac{1}{2 \sigma_{0}^{2}}\left(\mu-\mu_{0}\right)^{2}\right)
+\mu \sim \mathcal{N}\left(\mu_0, \sigma_0^2\right)
 $$
 
 and then use a sample
 
 $$
-P\left(x \mid \mu, \sigma^{2}\right) \propto \frac{1}{\sigma^{n}} \exp \left(-\frac{1}{2 \sigma^{2}} \left(x-\mu\right)^{2}\right)
+x \mid \mu \sim \mathcal{N}\left(\mu, \sigma^2\right)
 $$
 
 to produce a posterior distribution for it
@@ -106,8 +114,6 @@ $$
 $$
 
 which ties up with the classical estimate.
-
-FIXME: I seem to have used two different notations
 
 <details class="code-details">
 <summary>Extensions and imports (for the over-enthusiatic reader only)</summary>
@@ -173,18 +179,27 @@ Let's generate a mean for the distribution and then some samples from it
 > fakeObs :: (R.StatefulGen g m, MonadReader g m) =>
 >            Int -> Double -> Double -> Double -> m (Double, [Double])
 > fakeObs n mu0 sigma02 sigma = do
->   mu <- R.sample (normal mu0 sigma02)
+>   mu <- R.sample $ normal mu0 sigma02
 >   xs <- replicateM n $ R.sample $ normal mu sigma
 >   return (mu, xs)
 
-> generateSamples :: MonadIO m =>
->                    Double -> Double -> Int -> m (Double, [Double])
+The constraints `R.StatefulGen g m` and `MonadReader g m` are there to
+ensure we only sample from random number generators that provide
+enough functionality to support the sort of sampling we need. If you
+are not familiar with Haskell then you can ignore them.
+
+To actually do the sampling we have to provide a seeded random number
+generator and then "run" the function `fakeObs`
+
+> generateSamples :: Double -> Double -> Int -> IO (Double, [Double])
 > generateSamples mu0 sigma02 nObs = do
 >   setStdGen (mkStdGen 42)
 >   g <- newStdGen
 >   stdGen <- newIOGenM g
 >   runReaderT (fakeObs nObs mu0Test sigma02Test sigmaTest) stdGen
 
+We can look at samples from the prior in a histogram to check it
+conforms to our expectations.
 
 <details class="code-details">
 <summary>Code for Drawing Histogram of Generated Samples</summary>
@@ -213,8 +228,9 @@ Let's generate a mean for the distribution and then some samples from it
 
 ![](diagrams/barChart.svg)
 
-We'd like to use the samples to recover the mean. Here's the update
-for one observation
+We'd like to use the samples to recover the mean. Here's the formula
+in Haskellfor producing the posterior from the prior given one
+observation
 
 > exact :: Double -> (Double, Double) -> Double -> (Double, Double)
 > exact s2 (mu0, s02) x = (mu1, s12)
@@ -223,24 +239,37 @@ for one observation
 >           mu0 * s2  / (s2 + s02)
 >     s12 = recip (recip s02 + recip s2)
 
-And we can test after many samples (since the data is very noisy) that we get back a reasonable estimate
+And we can test after, for example a 100 samples, that we get back a
+reasonable estimate
 
-> test :: MonadIO m => m (Double, Double)
-> test = let f = exact sigmaTest in
->        fst <$>
->        mapAccumL (\s x -> (f s x, f s x)) (mu0Test, sigma02Test) <$>
->        snd <$> generateSamples mu0Test sigma02Test 100
+> test :: IO (Double, (Double, Double))
+> test = do
+>   let f :: (Double, Double) -> Double -> (Double, Double)
+>       f = exact sigmaTest
+>   (m, ss) <- generateSamples mu0Test sigma02Test 100
+>   let est = fst $ mapAccumL (\s x -> (f s x, f s x))
+>                             (mu0Test, sigma02Test) ss
+>   return (m, est)
+
+We get an actual value of -2.168 and an estimate of -2.152 with a
+variance of 0.002 (all values to 3 decimal places).
 
 We can re-write this problem in a way suitable for particle filtering:
-
+sample from the prior and then make the state this value for every
+time step and observe noisy measurements of this value. That the state
+update is degenerate can in general cause problems but in the case,
+for the purpose of illustration, it causes no issue.
 
 $$
 \begin{aligned}
 x_0 &\sim {\mathcal{N}}(\mu_0, \sigma_0^2) \\
 x_{i} &= x_{i-1} \\
-y_i   &= x_i + \epsilon_i
+y_i   &= x_i + \epsilon_i \\
+\epsilon_i &\sim {\mathcal{N}}(0, \sigma^2)
 \end{aligned}
 $$
+
+where the $\epsilon_i$ are independent.
 
 > pf :: forall m g a b . (R.StatefulGen g m,
 >                           MonadReader g m) =>

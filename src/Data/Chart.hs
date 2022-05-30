@@ -106,12 +106,12 @@ barChartAux bvs = toRenderable layout
       $ layout_plots .~ (map plotBars plots)
       $ def
 
-    title = "Posterior via MCMC"
+    title = "Samples from Prior"
 
     plots = [ bars1 ]
 
     bars1 =
-      plot_bars_titles .~ ["MCMC"]
+      plot_bars_titles .~ ["Prior"]
       $ plot_bars_values .~ addIndexes (map return $ map snd bvs)
       $ plot_bars_style .~ BarsClustered
       $ plot_bars_item_styles .~ [(solidFillStyle (blue `withOpacity` 0.25), Nothing)]
