@@ -120,6 +120,7 @@ let
     Chart-diagrams
     diagrams-svg
     histogram-fill
+    lhs2tex
   ];
 
   # FIXME: One day I will be able to use julia with nix
@@ -134,6 +135,7 @@ pkgs.stdenv.mkDerivation {
     pkgs.libintlOrEmpty
     R-with-my-packages
     pkgs.pandoc
+    pkgs.inkscape
     pkgs.texlive.combined.scheme-full
     (pkgs.myHaskellPackages.ghcWithPackages haskellDeps)
   ];
