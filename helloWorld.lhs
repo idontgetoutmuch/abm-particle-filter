@@ -29,6 +29,8 @@
 
 \maketitle
 
+\listoftodos
+
 \section{Introduction}
 
 Suppose you wish to model the outbreak of a disease. The
@@ -186,10 +188,13 @@ which ties up with the classical estimate.
 module Foo (generateSamples) where
 
 import           System.Random
-import           System.Random.Stateful (newIOGenM, IOGenM)
+import           System.Random.Stateful (StatefulGen, newIOGenM, IOGenM)
 import           Data.Random.Distribution.Normal
 import qualified Data.Random as R
 import           Control.Monad.Reader
+import           Data.Maybe (catMaybes)
+import           Data.List (unfoldr)
+
 
 import           Data.Histogram ()
 import qualified Data.Histogram as H
@@ -206,12 +211,15 @@ import Diagrams.Backend.SVG.CmdLine
 import Diagrams.Prelude hiding ( sample, render, normal )
 import System.Environment
 import Text.Printf
+
+import           Data.List (transpose, mapAccumL)
+import           Distribution.Utils.MapAccum
 \end{code}
 
 Let's generate a mean for the distribution and then some samples from it
 
 \begin{code}
-fakeObs :: (R.StatefulGen g m, MonadReader g m) =>
+fakeObs :: (StatefulGen g m, MonadReader g m) =>
            Int -> Double -> Double -> Double -> m (Double, [Double])
 fakeObs n mu0 sigma02 sigma = do
   mu <- R.sample $ normal mu0 sigma02
@@ -219,7 +227,7 @@ fakeObs n mu0 sigma02 sigma = do
   return (mu, xs)
 \end{code}
 
-The constraints `R.StatefulGen g m` and `MonadReader g m` are there to
+The constraints `StatefulGen g m` and `MonadReader g m` are there to
 ensure we only sample from random number generators that provide
 enough functionality to support the sort of sampling we need. If you
 are not familiar with Haskell then you can ignore them.
@@ -285,12 +293,6 @@ hb = forceDouble -<< mkSimple (binD lower numBins upper)
     lower = -4.0
     upper = 4.0
 
-mu0Test :: Double
-mu0Test = 0.0
-
-sigma02Test :: Double
-sigma02Test = 1.0
-
 hist :: IO (Histogram VU.Vector BinD Double)
 hist = do
   (_m0, ss) <- generateSamples mu0Test sigma02Test 10000
@@ -321,18 +323,209 @@ exact s2 (mu0, s02) x = (mu1, s12)
     mu1 = x   * s02 / (s2 + s02) +
           mu0 * s2  / (s2 + s02)
     s12 = recip (recip s02 + recip s2)
-
-testlhs2tex :: (Double, Double)
-testlhs2tex = exact 1.0 (2.0, 3.0) 4.0
 \end{code}
 
-The value is \eval{testlhs2tex}
+And we can test after, for example a 100 samples, that we get back a
+reasonable estimate
 
-\eval{:t pi}
+\todo[author=Adrianne, caption={`mapAccumL`}]{Should I explain what
+`mapAccumL` does? Or is it better to wait for the re-write in Julia?}
 
-\eval{:!which ghci}
+\begin{code}
+mu0Test :: Double
+mu0Test = 0.0
 
-\section{Appendix I}
+sigma02Test :: Double
+sigma02Test = 1.0
+
+sigmaTest :: Double
+sigmaTest = 0.2
+
+test :: IO (Double, (Double, Double))
+test = do
+  let f :: (Double, Double) -> Double -> (Double, Double)
+      f = exact sigmaTest
+  (m, ss) <- generateSamples mu0Test sigma02Test 100
+  let est = fst $ mapAccumL (\s x -> (f s x, f s x))
+                            (mu0Test, sigma02Test) ss
+  return (m, est)
+\end{code}
+
+\begin{code}
+foo :: IO String
+foo = printf "%4.3f" <$> fst <$> test
+
+bar :: IO String
+bar = printf "%4.3f" <$> fst <$> snd <$> test
+
+baz :: IO String
+baz = printf "%4.3f" <$> snd <$> snd <$> test
+\end{code}
+\todo[author=Dominic, caption={Yuk}, color=green]{Yuk}
+
+We get an actual value of \eval{foo} and an estimate of \eval{bar} with a
+variance of \eval{baz} (all values to 3 decimal places).
+
+We can re-write this problem in a way suitable for particle filtering:
+sample from the prior and then make the state this value for every
+time step and observe noisy measurements of this value. That the state
+update is degenerate can in general cause problems but in the case,
+for the purpose of illustration, it causes no issue.
+
+$$
+\begin{aligned}
+x_0 &\sim {\mathcal{N}}(\mu_0, \sigma_0^2) \\
+x_{i} &= x_{i-1} \\
+y_i   &= x_i + \epsilon_i \\
+\epsilon_i &\sim {\mathcal{N}}(0, \sigma^2)
+\end{aligned}
+$$
+
+where the $\epsilon_i$ are independent.
+
+\begin{code}
+generatePrior :: MonadIO m => Double -> Double -> Int -> m [Double]
+generatePrior mu s nps = do
+  setStdGen (mkStdGen 42)
+  g <- newStdGen
+  stdGen <- newIOGenM g
+  runReaderT (replicateM nps $ R.sample $ normal mu s) stdGen
+
+runFilter :: MonadIO m => [a] ->
+                          Int ->
+                          (a -> ReaderT (IOGenM StdGen) m a) ->
+                          (a -> ReaderT (IOGenM StdGen) m b) ->
+                          (b -> b -> Double) ->
+                          [b] ->
+                          m [(Particles a, Particles Double)]
+runFilter prior nps ff gg dd samples = do
+  setStdGen (mkStdGen 42)
+  g'' <- newStdGen
+  stdGen' <- newIOGenM g''
+  runReaderT (nSteps prior nps ff gg dd samples) stdGen'
+\end{code}
+
+\todo[author=Dominic, caption={Better type signature}, color=green]{The type signature will need some explanation and it would be better to avoid it}
+
+\begin{code}
+test1 :: IO ()
+test1 = do
+  print "Prior paramaters"
+  print (mu0Test, sigma02Test)
+  let obsN = 2
+  (mu, samples) <- generateSamples mu0Test sigma02Test obsN
+  print "Mean to be estimated (sampled from hyperparameters)"
+  print mu
+  let n = 1000
+  prior <- generatePrior mu0Test (sqrt sigma02Test) n
+  let priorSampledMean = sum prior / fromIntegral n
+      priorSampledMean2 = sum (map (\x -> x * x) prior) / fromIntegral n
+      priorSampledVar = priorSampledMean2 - priorSampledMean * priorSampledMean
+  print "Prior Sampled Mean"
+  print priorSampledMean
+  print "Prior Sampled Variance"
+  print priorSampledVar
+  print "First observation"
+  print (samples!!0)
+  print "Posterior parameters exact"
+  let p1Exact = exact sigmaTest (mu0Test, sigma02Test) (samples!!0)
+  print p1Exact
+  p1Samples <- runFilter prior n
+                         return return
+                         (\x y -> R.logPdf (Normal x (sqrt sigmaTest)) y)
+                         (take 2 samples)
+  let p1m1s = map (/ fromIntegral n) $
+              map sum $
+              map fst p1Samples
+      p1m2s = map (/ fromIntegral n) $
+              map sum $
+              map (map (\x -> x * x)) $
+              map fst p1Samples
+      p1v  = zipWith(\p1m1 p1m2 -> p1m2 - p1m1 * p1m1) p1m1s p1m2s
+  print "Posterior parameters approximate"
+  print p1m1s
+  print p1v
+\end{code}
+
+\section{Stuff}
+
+\begin{code}
+type Particles a = [a]
+
+nSteps :: (R.StatefulGen g m, MonadReader g m) =>
+  [a] ->
+  Int ->
+  (a -> m a) ->
+  (a -> m b) ->
+  (b -> b -> Double) ->
+  [b] ->
+  m [(Particles a, Particles Double)]
+nSteps prior nps ff gg dd obs = do
+  let iws = replicate nps (recip $ fromIntegral nps)
+  ps <- mapAccumM (oneStep ff gg dd) (prior, iws) obs
+  return $ snd ps
+
+oneStep :: (StatefulGen g m, MonadReader g m) =>
+        (a -> m a)
+     -> (a -> m b)
+     -> (b -> b -> Double)
+     -> (Particles a, Particles Double)
+     -> b
+     -> m ((Particles a, Particles Double), (Particles a, Particles Double))
+oneStep ff gg dd (psPrev, wsPrev) ob = do
+  (_, wsNew, _, psNew) <- pf resampleStratified psPrev ff gg dd wsPrev ob
+  return ((psNew, wsNew), (psNew, wsNew))
+
+resampleStratified :: (StatefulGen g m, MonadReader g m) => [Double] -> m [Int]
+resampleStratified weights = do
+  let bigN = length weights
+  dithers <- replicateM bigN (R.sample $ R.uniform 0.0 1.0)
+  let positions = map (/ (fromIntegral bigN)) $
+                  zipWith (+) dithers (map fromIntegral [0 .. bigN - 1])
+      cumulativeSum = scanl (+) 0.0 weights
+      coalg (i, j) | i < bigN =
+                       if (positions!!i) < (cumulativeSum!!j)
+                       then Just (Just j, (i + 1, j))
+                       else Just (Nothing, (i, j + 1))
+                   | otherwise =
+                       Nothing
+  return $ map (\i -> i - 1) $ catMaybes $ unfoldr coalg (0, 0)
+
+pf :: forall m g a b . (StatefulGen g m,
+                        MonadReader g m) =>
+      (Particles Double -> m (Particles Int)) ->
+      Particles a ->
+      (a -> m a) ->
+      (a -> m b) ->
+      (b -> b -> Double) ->
+      Particles Double ->
+      b ->
+      m (Particles b, Particles Double, Double, Particles a)
+pf resample statePrev ff g dd log_w y = do
+
+  let bigN = length log_w
+      wn   = map exp $
+             zipWith (-) log_w (replicate bigN (maximum log_w))
+      swn  = sum wn
+      wn'  = map (/ swn) wn
+
+  a <- resample wn'
+  let stateResampled = map (\i -> statePrev!!(a!!i)) [0 .. bigN - 1]
+
+  statePredicted <- mapM ff stateResampled
+  obsPredicted <- mapM g statePredicted
+
+  let ds                   = map (dd y) obsPredicted
+      maxWeight            = maximum ds
+      wm                   = map exp $
+                             zipWith (-) ds (replicate bigN maxWeight)
+      swm                  = sum wm
+      predictiveLikelihood =   maxWeight
+                             + log swm
+                             - log (fromIntegral bigN)
+
+  return (obsPredicted, ds, predictiveLikelihood, statePredicted)
+\end{code}
 
 Let us take a very simple example of a prior $X \sim {\cal{N}}(0,
 \sigma^2)$ where $\sigma^2$ is known and then sample from a normal
@@ -408,6 +601,189 @@ Hence $M$ is bounded in $L^2$ and therefore converges in $L^2$ and
 almost surely to $M_\infty \triangleq {\cal{E}}(X \,\vert\,
 {\cal{F}}_\infty)$.
 
+\section{Markov Process and Chains}
+
+A **probability kernel** is a mapping $K : \mathbb{X} \times {\mathcal{Y}}
+\rightarrow \overline{\mathbb{R}}_{+}$ where $(\mathbb{X}, {\mathcal{X}})$ and $(\mathbb{Y},
+{\mathcal{Y}})$ are two measurable spaces such that $K(s, \cdot)$ is a
+probability measure on ${\mathcal{Y}}$ for all $s \in \mathbb{X}$ and such that
+$K(\cdot, A)$ is a measurable function on $\mathbb{X}$ for all $A \in
+{\mathcal{Y}}$.
+
+A sequence of random variables $X_{0:T}$ from $(\mathbb{X}, {\mathcal{X}})$  to $(\mathbb{X}, {\mathcal{X}})$
+with joint distribution given by
+
+$$
+\mathbb{P}_T(X_{0:T} \in {\mathrm d}x_{0:T}) = \mathbb{P}_0(\mathrm{d}x_0)\prod_{s = 1}^T K_s(x_{s - 1}, \mathrm{d}x_s)
+$$
+
+where $K_t$ are a sequence of probability kernels is called a (discrete-time) **Markov process**.
+The measure so given is a path measure.
+
+Note that, e.g.,
+
+$$
+\mathbb{P}_1((X_{0}, X_{1}) \in A_0 \times A_1) = \int_{A_{0} \times A_{1}} \mathbb{P}_0(\mathrm{d}x_0) K_1(x_{0}, \mathrm{d}x_1)
+$$
+
+It can be shown that
+
+$$
+\mathbb{P}_T(X_t \in \mathrm{d}x_t \,|\, X_{0:t-1} = x_{0:t-1}) = \mathbb{P}_T(X_t \in \mathrm{d}x_t \,|\, X_{t-1} = x_{t-1}) = K_t(x_{t-1}, \mathrm{d}x_t)
+$$
+
+and this is often used as the defintion of a (discrete-time) Markov Process.
+
+Let $(\mathbb{X}, \mathcal{X})$ and $(\mathbb{Y}, \mathcal{Y})$ be two measure (actually Polish) spaces.
+We define a hidden Markov model as a $(\mathbb{X} \times \mathbb{Y}, X \otimes \mathcal{Y})$-measurable
+Markov process $\left(X_{n}, Y_{n}\right)_{n \geq 0}$ whose joint distribution is given by
+
+$$
+\mathbb{P}_T(X_{0:T} \in {\mathrm d}x_{0:T}, Y_{0:T} \in {\mathrm d}y_{0:T}) = \mathbb{P}_0(\mathrm{d}x_0)F_0(x_{0}, \mathrm{d}y_0)\prod_{s = 1}^T K_s(x_{s - 1}, \mathrm{d}x_s) F_s(x_{s}, \mathrm{d}y_s)
+$$
+
+Writing
+$$
+\mathbb{Q}_0(\mathrm{d}x_0, \mathrm{d}y_0) = \mathbb{P}_0(\mathrm{d}x_0) F_0(x_0, \mathrm{d}y_0)
+$$
+and
+$$
+L _t((x_{t-1}, y_{t-1}), (\mathrm{d}x_t, \mathrm{d}y_t)) = K_t(x_{t - 1}, \mathrm{d}x_t) F_t(x_{t}, \mathrm{d}y_t)
+$$
+we see that this is really is a Markov process:
+
+$$
+\begin{aligned}
+\mathbb{P}_T(X_{0:T} \in {\mathrm d}x_{0:T}, Y_{0:T} \in {\mathrm d}y_{0:T}) &=
+\mathbb{P}_0(\mathrm{d}x_0)F_0(x_0, \mathrm{d}y_0)\prod_{s = 1}^T K_s(x_{s - 1}, \mathrm{d}x_s) F_s(x_{s}, \mathrm{d}y_s) \\
+&= \mathbb{Q}_0(\mathrm{d}x_0, \mathrm{d}y_0)\prod_{s = 1}^T L_s((x_{s - 1}, y_{s - 1}), (\mathrm{d}x_s, \mathrm{d}y_s))
+\end{aligned}
+$$
+
+We make the usual assumption that
+
+$$
+F_t(x_t, \mathrm{d}y_t) = f_t(x_t, y_t) \nu(\mathrm{d}y)
+$$
+
+We can marginalise out $X_{0:T}$:
+
+$$
+\mathbb{P}_T(Y_{0:t} \in \mathrm{d}y_{0:t}) = \mathbb{E}_{\mathbb{P}_t}\Bigg[\prod_{s=0}^t f_s(X_s, y_s)\Bigg]\prod_{s=0}^t\nu(\mathrm{d}y_s)
+$$
+
+And writing
+
+$$
+p_T(y_{0:t}) = p_t(y_{0:t}) = \mathbb{E}_{\mathbb{P}_t}\Bigg[\prod_{s=0}^t f_s(X_s, y_s)\Bigg]
+$$
+
+We can write
+
+$$
+\mathbb{P}_t(X_{0:t} \in \mathrm{d}x_{0:t} \,\mid\, Y_{0:t} = y_{0:t}) = \frac{1}{p_t(y_{0:t})}\Bigg[\prod_{s=0}^t f(x_s, y_s)\Bigg]\mathbb{P}_t(\mathrm{d}x_{0:t})
+$$
+
+We can generalise this. Let us start by with a Markov process
+
+$$
+\mathbb{M}_T(X_{0:T} \in {\mathrm d}x_{0:T}) = \mathbb{M}_0(\mathrm{d}x_0)\prod_{s = 1}^T M_s(x_{s - 1}, \mathrm{d}x_s)
+$$
+
+and then assume that we are given a sequence of potential functions (the nomenclature appears to come from statistical physics) $G_0 : \mathcal{X} \rightarrow \mathbb{R}^+$ and $G_t : \mathcal{X} \times \mathcal{X} \rightarrow \mathbb{R}^+$ for $1 \leq t \leq T$. Then a sequence of Feynman-Kac models is given by a change of measure (FIXME: not even mentioned so far) from $\mathbb{M}_t$:
+
+$$
+\mathbb{Q}_t(\mathrm{d} x_{0:t}) := \frac{1}{L_t}G_0(x_0)\Bigg[\prod_{s=1}^t G_s(x_{s-1}, x_s)\Bigg]\mathbb{M}_t(\mathrm{d} x_{0:t})
+$$
+
+(N.B. we don't yet know this is a Markov measure - have we even defined a Markov measure?)
+
+where
+
+$$
+L_t = \int_{\mathcal{X}^{t+1}} G_0(x_0)\Bigg[\prod_{s=1}^t G_s(x_{s-1}, x_s)\Bigg]\mathbb{M}_t(\mathrm{d} x_{0:t})
+$$
+
+With some manipulation we can write these recursively (FIXME: we had better check this).
+
+Extension (of the path) which we will use to derive the predictive step:
+
+$$
+\mathbb{Q}_{t-1}\left(\mathrm{~d} x_{t-1: t}\right)=\mathbb{Q}_{t-1}\left(\mathrm{~d} x_{t-1}\right) M_{t}\left(x_{t-1}, \mathrm{~d} x_{t}\right)
+$$
+
+and the change of measure step which we will use to derive the correction step:
+
+$$
+\mathbb{Q}_{t}\left(\mathrm{~d} x_{t-1: t}\right)=\frac{1}{\ell_{t}} G_{t}\left(x_{t-1}, x_{t}\right) \mathbb{Q}_{t-1}\left(\mathrm{~d} x_{t-1: t}\right)
+$$
+
+where
+
+$$
+\ell_{0}=L_{0}=\int_{\mathcal{X}} G_{0}\left(x_{0}\right) M_{0}\left(\mathrm{~d} x_{0}\right)
+$$
+
+and
+
+$$
+\ell_{t}=\frac{L_{t}}{L_{t-1}}=\int_{\mathcal{X}^{2}} G_{t}\left(x_{t-1}, x_{t}\right) \mathbb{Q}_{t-1}\left(\mathrm{~d} x_{t-1: t}\right)
+$$
+
+for $t \geq 1$.
+
+For a concrete example (bootstrap Feynman-Kac), we can take
+
+$$
+\begin{aligned}
+&\mathbb{M}_{0}\left(\mathrm{~d} x_{0}\right)=\mathbb{P}_{0}\left(\mathrm{~d} x_{0}\right), \quad G_{0}\left(x_{0}\right)=f_{0}\left(x_{0}, y_{0}\right) \\
+&M_{t}\left(x_{t-1}, \mathrm{~d} x_{t}\right)=K_{t}\left(x_{t-1}, \mathrm{~d} x_{t}\right), \quad G_{t}\left(x_{t-1}, x_{t}\right)=f_{t}\left(x_{t}, y_{t}\right)
+\end{aligned}
+$$
+
+Then using extension and marginalising we have
+
+$$
+\mathbb{P}_{t-1}\left(X_{t} \in \mathrm{d} x_{t} \mid Y_{0: t-1}=y_{0: t-1}\right)
+=\int_{x_{t-1} \in \mathcal{X}} K_{t}\left(x_{t-1}, \mathrm{~d} x_{t}\right) \mathbb{P}_{t-1}\left(X_{t-1} \in \mathrm{d} x_{t-1} \mid Y_{0: t-1}=y_{0: t-1}\right)
+$$
+
+And using change of measure and marginalising we have
+$$
+\mathbb{P}_{t}\left(X_{t} \in \mathrm{d} x_{t} \mid Y_{0: t}=y_{0: t}\right)=\frac{1}{\ell_{t}} f_{t}\left(x_{t}, y_{t}\right) \mathbb{P}_{t-1}\left(X_{t} \in \mathrm{d} x_{t} \mid Y_{0: t-1}=y_{0: t-1}\right)
+$$
+
+If we define an operator $P$ on measures as:
+
+$$
+\mathrm{P} \rho := \int \rho(\mathrm{d}x)K\left(x, \mathrm{d}x^{\prime}\right)
+$$
+
+and an operator $C_t$ as:
+
+$$
+\mathrm{C}_{t} \rho := \frac{\rho(d x) f\left(x, y_{t}\right)}{\int \rho(d x) f\left(x, y_{t}\right)}
+$$
+
+$$
+\pi_{n} := \mathbf{P}\left(X_{n} \in \cdot \mid Y_{1}, \ldots, Y_{n}\right)
+$$
+
+$$
+\pi_{n-1} \stackrel{\text { prediction }}{\longrightarrow} \mathrm{P} \pi_{n-1} \stackrel{\text { correction }}{\longrightarrow} \pi_{n}=\mathrm{C}_{n} \mathrm{P} \pi_{n-1}
+$$
+
+$$
+\hat{\pi}_{n-1} \stackrel{\text { prediction }}{\longrightarrow} \mathrm{P} \hat{\pi}_{n-1} \stackrel{\text { sampling }}{\longrightarrow} \mathrm{S}^{N} \mathrm{P} \hat{\pi}_{n-1} \stackrel{\text { correction }}{\longrightarrow} \hat{\pi}_{n}:=\mathrm{C}_{n} \mathrm{~S}^{N} \mathrm{P} \hat{\pi}_{n-1}
+$$
+
+$$
+\mathrm{S}^{N} \rho:=\frac{1}{N} \sum_{i=1}^{N} \delta_{X(i)}, \quad X(1), \ldots, X(N) \text { are i.i.d. samples with distribution } \rho
+$$
+
+$$
+\sup _{|f| \leq 1} \mathbf{E} \lvert\pi_{n} f-\hat{\pi}_{n} f\rvert \leq \frac{C}{\sqrt{N}}
+$$
 
 \section{Bibliography}
 
